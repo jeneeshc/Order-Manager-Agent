@@ -1,0 +1,3 @@
+﻿[Order Collector Agent] Activating Gemini LLM on: Update order CJS-12345: change to velvet and 6000 stitches.
+[Order Collector Agent] LLM Extraction Type: <class 'NoneType'>
+[Order Collector Agent] LLM Extraction Data: None

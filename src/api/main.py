@@ -9,6 +9,7 @@ from src.services.whatsapp import WhatsAppService
 from src.services.sheets import GoogleSheetsService
 from src.services.memory import MemoryService
 from src.services.audio import AudioTranscriptionService
+from src.agents.agent_6_secretary import SecretaryAgent
 
 # Load environment configuration
 load_dotenv()
@@ -19,6 +20,7 @@ whatsapp_service = WhatsAppService()
 db_service = GoogleSheetsService()
 memory_service = MemoryService()
 audio_service = AudioTranscriptionService()
+secretary_service = SecretaryAgent()
 
 @app.get("/")
 def health_check():
@@ -36,6 +38,19 @@ def verify_whatsapp_webhook(request: Request):
     if mode and token and mode == "subscribe" and token == VERIFY_TOKEN:
         return int(challenge)
     raise HTTPException(status_code=403, detail="Verification failed")
+
+@app.post("/cron/daily-report")
+async def daily_report():
+    """Triggered daily at 9:00 AM to send Siny her work summary."""
+    print("[CRON] Generating daily report for Siny...")
+    data = db_service.get_secretary_data()
+    report = secretary_service.generate_daily_summary(data)
+    
+    # Send to Siny (using the admin number from env)
+    admin_phone = os.getenv("ADMIN_PHONE_NUMBER", "918289897413") 
+    whatsapp_service.send_text_message(admin_phone, report)
+    
+    return {"status": "success", "message": "Daily report sent."}
 
 @app.post("/webhook")
 async def receive_whatsapp_message(request: Request):
@@ -215,6 +230,15 @@ async def receive_whatsapp_message(request: Request):
                             whatsapp_service.send_text_message(sender_phone, msg)
                             return {"status": "received"}
                         
+                        # ✨ NEW: Intercept Secretary Tasks/Summary Queries! ✨
+                        if final_state_dict.get("is_secretary_query"):
+                            memory_service.clear_state(sender_phone)
+                            data = db_service.get_secretary_data()
+                            msg = secretary_service.generate_daily_summary(data)
+                            
+                            whatsapp_service.send_text_message(sender_phone, msg)
+                            return {"status": "received"}
+                        
                         # 3. Handle End States & Logic Responses
                         if final_state_dict.get("is_missing_info"):
                             # Agent 1 determined it needed more info. Save memory so it doesn't forget!
@@ -226,7 +250,14 @@ async def receive_whatsapp_message(request: Request):
                             memory_service.clear_state(sender_phone)
                             
                             rebuilt_state = AgentState(**final_state_dict)
-                            order_id = db_service.append_order(rebuilt_state)
+                            
+                            if rebuilt_state.order_id:
+                                success = db_service.update_order(rebuilt_state)
+                                order_id = rebuilt_state.order_id
+                                action_msg = "Updated in DB"
+                            else:
+                                order_id = db_service.append_order(rebuilt_state)
+                                action_msg = "Saved to DB"
                             
                             # Agent replies directly back to phone with estimate
                             quote = (f"✅ Computation Complete!\n"
@@ -234,7 +265,7 @@ async def receive_whatsapp_message(request: Request):
                                      f"• Complete By: {rebuilt_state.estimated_completion_date}\n"
                                      f"• Machine Chosen: {rebuilt_state.machine_assigned}\n"
                                      f"• Invoice Status: {rebuilt_state.invoice_status}\n"
-                                     f"• Saved To DB: {order_id}")
+                                     f"• {action_msg}: {order_id}")
                             whatsapp_service.send_text_message(sender_phone, quote)
                                 
         except Exception as e:

@@ -39,7 +39,7 @@ class GoogleSheetsService:
         values = [[
             datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),  # A: Order Date
             order_id,                                               # B: Order ID
-            state.customer_name or "Unknown",                      # C: Customer Name
+            state.customer_id or "Unknown",                        # C: Customer ID
             state.sender_id,                                        # D: Phone
             state.fabric_type or "Unknown",                        # E: Material
             state.embroidery_type or "Unknown",                    # F: Embroidery Type
@@ -68,6 +68,66 @@ class GoogleSheetsService:
             print(f"[SheetsAPI] Append failed: {e}")
             return None
 
+    def update_order(self, state) -> bool:
+        """
+        Locates an existing order by ID and updates its core fields.
+        Preserves original Order Date, ID, Customer ID, and Phone.
+        Appends new reasoning to the reasoning log.
+        """
+        if not self.service or not state.order_id: return False
+        
+        try:
+            # Step 1: Find the row index
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, range="B:B"
+            ).execute()
+            rows = result.get('values', [])
+            target_row = None
+            for i, row in enumerate(rows):
+                if row and row[0] == state.order_id:
+                    target_row = i + 1
+                    break
+            
+            if not target_row:
+                print(f"[SheetsAPI] Update failed: {state.order_id} not found.")
+                return False
+                
+            # Step 2: Read existing reasoning to append
+            k_result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, range=f"L{target_row}"
+            ).execute()
+            existing_reasoning = ""
+            k_vals = k_result.get('values', [])
+            if k_vals and k_vals[0]:
+                existing_reasoning = k_vals[0][0]
+                
+            # Step 3: Prepare updated values for columns E through L
+            # E: Material, F: Style, G: Stitches, H: Machine, I: Date, J: Cost, K: Status, L: Reasoning
+            updated_values = [[
+                state.fabric_type or "Unknown",
+                state.embroidery_type or "Unknown",
+                state.stitch_count or 0,
+                state.machine_assigned or "Pending",
+                state.estimated_completion_date or "Unknown",
+                f"Rs {state.total_cost_rs or 0}",
+                state.invoice_status or "Estimated",
+                existing_reasoning + "\n[Update Session]: " + (state.aggregated_reasoning or "")
+            ]]
+            
+            self.service.spreadsheets().values().update(
+                spreadsheetId=self.spreadsheet_id,
+                range=f"E{target_row}:L{target_row}",
+                valueInputOption="USER_ENTERED",
+                body={'values': updated_values}
+            ).execute()
+            
+            print(f"[SheetsAPI] Updated Order {state.order_id} successfully.")
+            return True
+            
+        except Exception as e:
+            print(f"[SheetsAPI] Update failed: {e}")
+            return False
+
     def get_order(self, order_id: str) -> dict:
         """
         Scans Sheet1 for a specific Order ID and securely returns 
@@ -87,7 +147,7 @@ class GoogleSheetsService:
                     print(f"[SheetsAPI] Found historical order: {order_id}")
                     return {
                         "date":             row[0]  if len(row) > 0  else None,
-                        "customer_name":    row[2]  if len(row) > 2  else None,
+                        "customer_id":      row[2]  if len(row) > 2  else None,
                         "phone":            row[3]  if len(row) > 3  else None,
                         "fabric_type":      row[4]  if len(row) > 4  else None,
                         "embroidery_type":  row[5]  if len(row) > 5  else None,
@@ -332,16 +392,20 @@ class GoogleSheetsService:
     def get_pending_payments(self) -> dict:
         """
         Scans all orders and returns those with Payment Status == 'Completed',
-        grouped by Customer Name. Returns a dict: {customer_name: [order_dict, ...]}
+        grouped by Customer Name.
+        Returns a dict: {"CUST-ID - Name": [order_dict, ...]}
         """
         if not self.service: return {}
         
         try:
+            # Get lookup mapping first
+            customer_map = self.get_all_customers_map()
+            
             result = self.service.spreadsheets().values().get(
                 spreadsheetId=self.spreadsheet_id, range="A:O"
             ).execute()
             rows = result.get('values', [])
-            pending = {}  # {customer_name: [orders]}
+            pending = {}  # { "CUST-001 - Name": [orders] }
             
             for i, row in enumerate(rows):
                 if i == 0: continue  # skip header
@@ -350,9 +414,13 @@ class GoogleSheetsService:
                 status = str(row[10]).strip().lower()  # K: Payment Status
                 if status != "completed": continue
                 
+                cid = row[2].strip() if len(row) > 2 else "Unknown"
+                cname = customer_map.get(cid, "Unknown Name")
+                display_key = f"{cid} - {cname}"
+                
                 order = {
                     "order_id":        row[1]  if len(row) > 1  else "Unknown",
-                    "customer_name":   row[2]  if len(row) > 2  else "Unknown",
+                    "customer_id":     cid,
                     "phone":           row[3]  if len(row) > 3  else "",
                     "embroidery_type": row[5]  if len(row) > 5  else "Unknown",
                     "fabric_type":     row[4]  if len(row) > 4  else "Unknown",
@@ -360,10 +428,9 @@ class GoogleSheetsService:
                     "delivery_date":   row[8]  if len(row) > 8  else "Unknown",
                 }
                 
-                customer = order["customer_name"]
-                if customer not in pending:
-                    pending[customer] = []
-                pending[customer].append(order)
+                if display_key not in pending:
+                    pending[display_key] = []
+                pending[display_key].append(order)
             
             total_count = sum(len(v) for v in pending.values())
             print(f"[SheetsAPI] Found {total_count} completed-unpaid orders across {len(pending)} customers.")
@@ -373,13 +440,64 @@ class GoogleSheetsService:
             print(f"[SheetsAPI] get_pending_payments failed: {e}")
             return {}
 
-    def check_duplicate_order(self, customer_name: str, phone: str, fabric_type: str, embroidery_type: str, stitch_count: int) -> bool:
+    def get_customer_id_by_name(self, name: str) -> str:
+        """
+        Scans the 'Customers' sheet (Col A=ID, B=Name). 
+        Returns the Customer ID if found via fuzzy match (case/space-insensitive).
+        Returns None if not found.
+        """
+        if not self.service or not name: return None
+        try:
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, range="Customers!A:B"
+            ).execute()
+            rows = result.get('values', [])
+            
+            target = name.strip().lower()
+            for i, row in enumerate(rows):
+                if i == 0 or len(row) < 2: continue # skip header
+                
+                sheet_name = str(row[1]).strip().lower()
+                if sheet_name == target:
+                    return str(row[0]).strip()
+            
+            return None
+            
+        except Exception as e:
+            print(f"[SheetsAPI] get_customer_id_by_name failed: {e}")
+            return None
+            
+    def get_all_customers_map(self) -> dict:
+        """
+        Returns a dictionary mapping Customer ID -> Name from the 'Customers' sheet.
+        """
+        mapping = {}
+        if not self.service: return mapping
+        try:
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, range="Customers!A:B"
+            ).execute()
+            rows = result.get('values', [])
+            
+            for i, row in enumerate(rows):
+                if i == 0 or len(row) < 2: continue
+                cid = str(row[0]).strip()
+                cname = str(row[1]).strip()
+                if cid and cname:
+                    mapping[cid] = cname
+            
+            return mapping
+        except Exception as e:
+            print(f"[SheetsAPI] get_all_customers_map failed: {e}")
+            return mapping
+
+    def check_duplicate_order(self, customer_id: str, phone: str, fabric_type: str, embroidery_type: str, stitch_count: int) -> bool:
         """
         Scans recent orders (last 24 hours) for an identical match based on:
-        Customer Name, Phone, Fabric, Embroidery Type, and Stitch Count.
+        Customer ID, Phone, Fabric, Embroidery Type, and Stitch Count.
         Returns True if a probable duplicate is found.
         """
-        if not self.service: return False
+        if not self.service or not customer_id: return False
         try:
             result = self.service.spreadsheets().values().get(
                 spreadsheetId=self.spreadsheet_id, range="A:O"
@@ -407,12 +525,12 @@ class GoogleSheetsService:
                 r_style    = str(row[5]).strip().lower() if len(row) > 5 else ""
                 r_stitch   = str(row[6]).strip() if len(row) > 6 else ""
                 
-                if (r_customer == customer_name.strip().lower() and
+                if (r_customer == customer_id.strip().lower() and
                     r_phone == phone.strip() and
                     r_fabric == fabric_type.strip().lower() and
                     r_style == embroidery_type.strip().lower() and
                     r_stitch == str(stitch_count).strip()):
-                    print(f"[SheetsAPI] Duplicate detected from {order_dt} for {customer_name}")
+                    print(f"[SheetsAPI] Duplicate detected from {order_dt} for {customer_id}")
                     return True
                     
             return False
@@ -420,3 +538,115 @@ class GoogleSheetsService:
         except Exception as e:
             print(f"[SheetsAPI] Duplicate check failed: {e}")
             return False
+
+    def get_secretary_data(self) -> dict:
+        """
+        Gathers data for the Secretary Agent's daily report.
+        Aggregation includes:
+        - Orders to be completed Today (Col I == Today)
+        - Pending invoices > 7 days (Col K != 'Invoiced' and Col A < 7 days ago)
+        - Holiday state (Today and Upcoming next 7 days)
+        - General Reminders from 'Reminders' tab
+        """
+        if not self.service: return {}
+        
+        today = datetime.datetime.now().date()
+        today_str = today.strftime("%Y-%m-%d")
+        seven_days_ago = today - datetime.timedelta(days=7)
+        
+        data = {
+            "today": today_str,
+            "orders_due_today": [],
+            "pending_invoices_old": [],
+            "holiday_status": None,
+            "upcoming_holidays": [],
+            "reminders": []
+        }
+        
+        try:
+            # 1. Fetch Orders (Sheet1)
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, range="A:K"
+            ).execute()
+            rows = result.get('values', [])
+            
+            for i, row in enumerate(rows):
+                if i == 0: continue
+                
+                # A: Order Date, B: ID, I: Completion, K: Status
+                order_date_str = row[0].split(" ")[0] if len(row) > 0 else ""
+                order_id = row[1] if len(row) > 1 else "Unknown"
+                completion_date = row[8] if len(row) > 8 else ""
+                status = row[10].strip().lower() if len(row) > 10 else ""
+                
+                # Orders due today
+                if completion_date == today_str:
+                    data["orders_due_today"].append({
+                        "id": order_id,
+                        "customer": row[2] if len(row) > 2 else "Unknown",
+                        "fabric": row[4] if len(row) > 4 else "Unknown",
+                        "cost": row[9] if len(row) > 9 else "Unknown"
+                    })
+                
+                # Pending invoices > 7 days
+                if status != "invoiced" and status != "completed" and order_date_str:
+                    try:
+                        order_dt = datetime.datetime.strptime(order_date_str, "%Y-%m-%d").date()
+                        if order_dt < seven_days_ago:
+                            data["pending_invoices_old"].append({
+                                "id": order_id,
+                                "date": order_date_str,
+                                "cost": row[9] if len(row) > 9 else "Unknown"
+                            })
+                    except ValueError:
+                        pass
+            
+            # 2. Fetch Holiday Status
+            holidays = self.get_holidays()
+            next_seven = today + datetime.timedelta(days=7)
+            
+            if today in holidays:
+                data["holiday_status"] = "TODAY IS A HOLIDAY!"
+                
+            for h in holidays:
+                if today < h <= next_seven:
+                    data["upcoming_holidays"].append(h.strftime("%d-%B-%Y"))
+            
+            # 3. Fetch Reminders
+            reminders = self.get_reminders()
+            for r in reminders:
+                when = r.get("when", "").lower()
+                what = r.get("what", "")
+                
+                # Handle "11th of each month"
+                if "of each month" in when:
+                    num_str = "".join(filter(str.isdigit, when))
+                    if num_str and str(today.day) == num_str:
+                        data["reminders"].append(what)
+                
+                # Handle Today if specified exactly or just a date
+                elif when == today_str or when == today.strftime("%d-%B-%y"):
+                    data["reminders"].append(what)
+            
+            return data
+            
+        except Exception as e:
+            print(f"[SheetsAPI] Secretary Data fetch failed: {e}")
+            return data
+
+    def get_reminders(self) -> list:
+        """Reads from a dedicated 'Reminders' tab."""
+        reminders = []
+        if not self.service: return reminders
+        try:
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, range="Reminders!A:C"
+            ).execute()
+            rows = result.get('values', [])
+            for i, row in enumerate(rows):
+                if i == 0 or len(row) < 3: continue
+                reminders.append({"when": str(row[1]).strip(), "what": str(row[2]).strip()})
+            return reminders
+        except Exception as e:
+            print(f"[SheetsAPI] Warning: 'Reminders' tab execution failure: {e}")
+            return reminders

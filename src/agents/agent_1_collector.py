@@ -6,22 +6,23 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from src.services.sheets import GoogleSheetsService
 
 class OrderExtractionModel(BaseModel):
-    """Rigid JSON schema for the LLM to fill out based on Siny's WhatsApp text."""
-    customer_name: Optional[str] = Field(description="The name of the customer placing the order. Leave null if not mentioned.")
-    fabric_type: Optional[str] = Field(description="The material/fabric mentioned. Leave null if not stated.")
-    embroidery_type: Optional[str] = Field(description="The style or type of embroidery (e.g. Logo, Floral, Pattern). Leave null if not stated.")
-    stitch_count: Optional[int] = Field(description="The exact numeric total of stitches requested. Leave null if not stated.")
-    requested_delivery_date: Optional[str] = Field(description="The day or date requested for delivery. Leave null if not stated.")
-    referenced_order_id: Optional[str] = Field(description="If Siny explicitly types a previous Order ID (like CJS-12345), exactly extract it here. Leave null if she does not mention one.")
-    mark_as_invoiced: bool = Field(description="True ONLY if the user explicitly commanded to mark an existing order ID as invoiced or finalized.")
-    explain_reasoning: bool = Field(description="True ONLY if Siny explicitly asks to explain the reasoning, logic, or math behind a previously generated Order ID.")
-    is_field_override: bool = Field(description="True ONLY if the user wants to manually change/override a specific field (delivery date, cost, or machine) on an existing order.")
-    override_field: Optional[str] = Field(description="If is_field_override is True, which field to change: 'delivery_date', 'cost', or 'machine'. Leave null otherwise.")
-    override_value: Optional[str] = Field(description="If is_field_override is True, the new value Siny wants to set. Leave null otherwise.")
-    is_payment_query: bool = Field(description="True ONLY if Siny is asking about pending payments, unpaid orders, or items awaiting payment.")
-    confirm_duplicate: bool = Field(description="True ONLY if the user explicitly says 'Yes' or confirms they want to proceed with a duplicate order that was previously warned about.")
-    is_missing_info: bool = Field(description="True if ANY of customer_name, fabric_type, embroidery_type, or stitch_count are missing AND she DID NOT provide an order ID AND mark_as_invoiced, is_payment_query, explain_reasoning, and is_field_override are all False.")
-    missing_fields_prompt: Optional[str] = Field(description="If is_missing_info is True, generate a friendly short text asking Siny for the missing details including customer name if not provided.")
+    """Structured extraction of order details from WhatsApp messages."""
+    customer_name: Optional[str] = Field(None, description="Customer name.")
+    fabric_type: Optional[str] = Field(None, description="Material/fabric type.")
+    embroidery_type: Optional[str] = Field(None, description="Embroidery style/type.")
+    stitch_count: Optional[int] = Field(None, description="Total stitch count (numeric).")
+    requested_delivery_date: Optional[str] = Field(None, description="Delivery date/day.")
+    referenced_order_id: Optional[str] = Field(None, description="Existing Order ID (e.g., CJS-12345) mentioned.")
+    mark_as_invoiced: bool = Field(False, description="True if asked to mark order as invoiced.")
+    explain_reasoning: bool = Field(False, description="True if asked to explain logic/math.")
+    is_field_override: bool = Field(False, description="True if manually changing a field on an existing order.")
+    override_field: Optional[str] = Field(None, description="Field to override ('delivery_date', 'cost', or 'machine').")
+    override_value: Optional[str] = Field(None, description="New value for the override.")
+    is_payment_query: bool = Field(False, description="True if asking about payments/unpaid orders.")
+    is_secretary_query: bool = Field(False, description="True if asking for a daily summary, work update, or tasks for today (secretary function).")
+    confirm_duplicate: bool = Field(False, description="True if confirming a duplicate order.")
+    is_missing_info: bool = Field(False, description="True if info is missing and not an update/query.")
+    missing_fields_prompt: Optional[str] = Field(None, description="Helpful prompt for missing fields.")
 
 class OrderCollectorAgent:
     def __init__(self):
@@ -42,25 +43,39 @@ class OrderCollectorAgent:
         
         # Build prompt injecting Memory State if it exists
         prompt = f"""You are Siny's WhatsApp Order Assistant.
-        Read this new text message from the customer: "{state.raw_message}"
+        Read this new text message: "{state.raw_message}"
         
         PRIOR KNOWLEDGE EXTRACTED: 
-        (If the customer already provided these earlier, do not extract them again. You only need to extract what the customer just said in the new message!)
+        (If you already have these, do not extract them again. You only need to extract what is in the new message!)
         - Known Customer Name: {state.customer_name or 'None'}
         - Known Fabric: {state.fabric_type or 'None'}
         - Known Embroidery: {state.embroidery_type or 'None'}
         - Known Stitches: {state.stitch_count or 'None'}
-        - Is Waiting For Duplicate Confirmation? {state.missing_fields_prompt.startswith('It looks like') if state.missing_fields_prompt else 'False'}
         
-        Last Question Asked to User: {state.missing_fields_prompt or 'None'}
-        
-        Extract any NEW sewing/business details from this Whatsapp message and output the structured JSON.
-        If the combination of Known properties AND your New properties still leaves the main 4 fields (customer_name, fabric_type, embroidery_type, stitch_count) incomplete, set is_missing_info=true and ask for specifically what is still missing!
-        If they are replying 'yes' to a duplicate check, output confirm_duplicate=true.
+        TASK:
+        Extract any business details from this message.
+        If an Order ID (like CJS-12345) is mentioned, exactly extract it into 'referenced_order_id'.
+        If they specify a new material, style, or stitch count for an existing order, extract those too.
+        If Siny asks for a daily summary, work schedule, status update on her tasks, or anything about "what needs to be done today", set 'is_secretary_query=True'.
         """
         
         # Generative AI reads the human text and extracts the core fields
-        extraction: OrderExtractionModel = self.extractor.invoke(prompt)
+        raw_extraction = self.extractor.invoke(prompt)
+        
+        # Robustly ensure we have an OrderExtractionModel instance
+        if raw_extraction is None:
+            print(f"[{self.name}] LLM returned None!", flush=True)
+            extraction = OrderExtractionModel()
+        elif isinstance(raw_extraction, OrderExtractionModel):
+            extraction = raw_extraction
+        else:
+            # If it's a dict or other object, convert to model
+            print(f"[{self.name}] Converting dict to model...", flush=True)
+            try:
+                extraction = OrderExtractionModel(**dict(raw_extraction))
+            except Exception as e:
+                print(f"[{self.name}] Conversion failed: {e}", flush=True)
+                extraction = OrderExtractionModel()
         
         # ✨ 0. Intercept explicit Database Mutation Overrides instantly! ✨
         if extraction.mark_as_invoiced and extraction.referenced_order_id:
@@ -95,6 +110,13 @@ class OrderCollectorAgent:
             state.is_payment_query = True
             state.current_agent = "End"
             return state
+            
+        # ✨ 0.8 Intercept Secretary Query! ✨
+        if extraction.is_secretary_query:
+            print(f"[{self.name}] Intercepted Secretary Query — routing to task summary.")
+            state.is_secretary_query = True
+            state.current_agent = "SecretaryAgent"
+            return state
         
         # Hydrate from Google Sheets if an Order ID was parsed!
         if extraction.referenced_order_id:
@@ -104,6 +126,7 @@ class OrderCollectorAgent:
             
             if historical_db_order:
                 # Inject DB parameters unless the AI successfully extracted a NEW override from the chat!
+                state.order_id = extraction.referenced_order_id
                 state.fabric_type = extraction.fabric_type or historical_db_order.get("fabric_type")
                 state.embroidery_type = extraction.embroidery_type or historical_db_order.get("embroidery_type")
                 state.stitch_count = extraction.stitch_count or historical_db_order.get("stitch_count")
