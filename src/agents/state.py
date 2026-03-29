@@ -20,7 +20,7 @@ class AgentState(BaseModel):
     # Agent 2 updates these: Scheduling
     estimated_completion_date: Optional[str] = None
     machine_assigned: Optional[str] = None  # Ricoma or Aakruthi
-    scheduling_reasoning: Optional[str] = None
+    aggregated_reasoning: str = Field(default="")
     
     # Agent 3 updates these: Costing
     total_cost_rs: Optional[float] = None
@@ -34,6 +34,7 @@ class AgentState(BaseModel):
     is_missing_info: bool = Field(default=False)
     missing_fields_prompt: Optional[str] = None
     
-    # State overrides for Native Database Mutations
+    # State overrides for Native Database Mutations & RAG Audits
     is_status_update: bool = Field(default=False)
     new_invoice_status: Optional[str] = None
+    is_explanation_request: bool = Field(default=False)

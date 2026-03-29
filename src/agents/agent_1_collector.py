@@ -13,6 +13,7 @@ class OrderExtractionModel(BaseModel):
     requested_delivery_date: Optional[str] = Field(description="The day or date requested for delivery. Leave null if not stated.")
     referenced_order_id: Optional[str] = Field(description="If Siny explicitly types a previous Order ID (like CJS-12345), exactly extract it here. Leave null if she does not mention one.")
     mark_as_invoiced: bool = Field(description="True ONLY if the user explicitly commanded to mark an existing order ID as invoiced or finalized.")
+    explain_reasoning: bool = Field(description="True ONLY if Siny explicitly asks to explain the reasoning, logic, or math behind a previously generated Order ID.")
     is_missing_info: bool = Field(description="True if ANY of fabric_type, embroidery_type, or stitch_count are missing and she DID NOT provide an order ID and mark_as_invoiced is False.")
     missing_fields_prompt: Optional[str] = Field(description="If is_missing_info is True, generate a friendly short text asking Siny for the missing details.")
 
@@ -58,6 +59,14 @@ class OrderCollectorAgent:
             state.order_id = extraction.referenced_order_id
             state.current_agent = "End" # Force Graph to skip Schedulers and Estimators!
             return state
+            
+        # ✨ 0.5 Intercept RAG History Explanations instantly! ✨
+        if extraction.explain_reasoning and extraction.referenced_order_id:
+            print(f"[{self.name}] Intercepted Database Explanation Request for {extraction.referenced_order_id}")
+            state.is_explanation_request = True
+            state.order_id = extraction.referenced_order_id
+            state.current_agent = "End"
+            return state
         
         # Hydrate from Google Sheets if an Order ID was parsed!
         if extraction.referenced_order_id:
@@ -95,6 +104,13 @@ class OrderCollectorAgent:
         else:
             state.is_missing_info = False
             state.current_agent = "ProductionScheduler"
+            
+        # Write Agent 1 Log to Column K!
+        agent_log = f"\n[Collector Agent]: Extracted Native Parameters -> Stitches: {state.stitch_count}, Fabric: {state.fabric_type}, Style: {state.embroidery_type}.\n"
+        if not hasattr(state, "aggregated_reasoning") or state.aggregated_reasoning is None:
+             state.aggregated_reasoning = agent_log
+        else:
+             state.aggregated_reasoning += agent_log
             
         print(f"[{self.name}] Aggregated Extraction Output -> Stitches: {state.stitch_count}, Fabric: {state.fabric_type}, Style: {state.embroidery_type}")
         

@@ -30,10 +30,23 @@ class EstimationAgent:
              u_count = matched_rule["unit_count"]
              u_cost = matched_rule["cost"]
              state.total_cost_rs = round((state.stitch_count / u_count) * u_cost, 2)
+             estimator_log = (
+                 f"\n[Estimator Agent]: Pricing Lookup -> Matched exact combination "
+                 f"('{state.embroidery_type}', '{state.fabric_type}') in Costing sheet. "
+                 f"Rule: {state.stitch_count} stitches / {u_count} units x Rs {u_cost} = Rs {state.total_cost_rs}. "
+                 f"Payment status set to 'Estimated'.\n"
+             )
         else:
              print(f"[{self.name}] Combinatorial pair ({target_emb}, {target_mat}) NOT natively mapped. Engaging Base fallback formula!")
              state.total_cost_rs = round((state.stitch_count / 1000.0) * 8.0, 2)
+             estimator_log = (
+                 f"\n[Estimator Agent]: Pricing Lookup -> No exact match found for "
+                 f"('{state.embroidery_type}', '{state.fabric_type}') in Costing sheet. "
+                 f"Applied default fallback rate: {state.stitch_count} stitches / 1000 x Rs 8.0 = Rs {state.total_cost_rs}. "
+                 f"Payment status set to 'Estimated'.\n"
+             )
              
+        state.aggregated_reasoning += estimator_log
         state.invoice_status = "Estimated"
         
         print(f"[{self.name}] Final Calculated Cost: Rs {state.total_cost_rs}")

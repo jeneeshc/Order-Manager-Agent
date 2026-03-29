@@ -61,8 +61,17 @@ class ProductionSchedulerAgent:
         state.machine_assigned = machine_assigned
         state.estimated_completion_date = current_date.strftime("%Y-%m-%d")
         
-        queue_text = "almost immediately today" if start_date == datetime.date.today() else f"after finishing the active tracking backlog on {start_date.strftime('%Y-%m-%d')}"
-        state.scheduling_reasoning = f"Smart-Assigned to {machine_assigned} {queue_text}. Required {days_required} true working days. Automatically navigated and skipped Sundays & explicit Spreadsheet blockouts."
+        skipped_holidays = [h.strftime('%Y-%m-%d') for h in holidays_to_skip if start_date <= h <= current_date]
+        queue_text = "immediately (no backlog)" if start_date == datetime.date.today() else f"after current backlog clears on {start_date.strftime('%Y-%m-%d')}"
+        scheduler_log = (
+            f"\n[Scheduler Agent]: Machine Queue Analysis -> Selected '{machine_assigned}' {queue_text}. "
+            f"Calculated {days_required} working day(s) needed for {state.stitch_count} stitches "
+            f"(at {self.spm} spm x {self.daily_hours}h/day). "
+            f"Completion date set to {current_date.strftime('%Y-%m-%d')}. "
+            f"Skipped days: {', '.join(skipped_holidays) if skipped_holidays else 'None (no holidays in range)'}. "
+            f"Total holidays loaded from sheet: {len(holidays_to_skip)}.\n"
+        )
+        state.aggregated_reasoning += scheduler_log
         
         state.current_agent = "EstimationAgent"
         return state

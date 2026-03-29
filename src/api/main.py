@@ -89,6 +89,33 @@ async def receive_whatsapp_message(request: Request):
                                 whatsapp_service.send_text_message(sender_phone, msg)
                                 return {"status": "received"}
                             
+                            # ✨ NEW: Intercept RAG Explanation Requests! ✨
+                            if final_state_dict.get("is_explanation_request"):
+                                target_order_id = final_state_dict.get("order_id")
+                                memory_service.clear_state(sender_phone)
+                                historical = db_service.get_order(target_order_id)
+                                
+                                if historical and historical.get("reasoning"):
+                                    raw_log = historical["reasoning"]
+                                    msg = (
+                                        f"📋 *Reasoning Log for Order {target_order_id}*\n"
+                                        f"────────────────────────────\n"
+                                        f"{raw_log}\n"
+                                        f"────────────────────────────\n"
+                                        f"📅 Order Date: {historical.get('date', 'Unknown')}\n"
+                                        f"🧵 Fabric: {historical.get('fabric_type')} | Style: {historical.get('embroidery_type')}\n"
+                                        f"📦 Stitches: {historical.get('stitch_count')} | Machine: {historical.get('machine_assigned')}\n"
+                                        f"💰 Cost: {historical.get('cost')} | Status: {historical.get('status')}\n"
+                                        f"🗓️ Delivery: {historical.get('completion_date')}"
+                                    )
+                                elif historical:
+                                    msg = f"⚠️ Order {target_order_id} was found in the database but has no reasoning log recorded in Column K. It may have been created before this feature was enabled."
+                                else:
+                                    msg = f"❌ Could not find order {target_order_id} in the database."
+                                    
+                                whatsapp_service.send_text_message(sender_phone, msg)
+                                return {"status": "received"}
+                            
                             # 3. Handle End States & Logic Responses
                             if final_state_dict.get("is_missing_info"):
                                 # Agent 1 determined it needed more info. Save memory so it doesn't forget!

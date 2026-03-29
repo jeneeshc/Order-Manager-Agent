@@ -47,7 +47,7 @@ class GoogleSheetsService:
             state.estimated_completion_date or "Unknown",
             f"Rs {state.total_cost_rs or 0}",
             state.invoice_status or "Estimated",
-            state.scheduling_reasoning or "No logic recorded"
+            state.aggregated_reasoning or "No logic recorded"
         ]]
         
         body = {'values': values}
@@ -77,7 +77,7 @@ class GoogleSheetsService:
         try:
             result = self.service.spreadsheets().values().get(
                 spreadsheetId=self.spreadsheet_id,
-                range="A:J"
+                range="A:K"
             ).execute()
             
             rows = result.get('values', [])
@@ -92,7 +92,8 @@ class GoogleSheetsService:
                         "machine_assigned": row[6] if len(row) > 6 else None,
                         "completion_date": row[7] if len(row) > 7 else None,
                         "cost": row[8] if len(row) > 8 else None,
-                        "status": row[9] if len(row) > 9 else None
+                        "status": row[9] if len(row) > 9 else None,
+                        "reasoning": row[10] if len(row) > 10 else "No historical agent reasoning log found natively in Column K."
                     }
             print(f"[SheetsAPI] Order {order_id} not found in database.")
             return None
