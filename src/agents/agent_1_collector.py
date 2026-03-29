@@ -14,6 +14,9 @@ class OrderExtractionModel(BaseModel):
     referenced_order_id: Optional[str] = Field(description="If Siny explicitly types a previous Order ID (like CJS-12345), exactly extract it here. Leave null if she does not mention one.")
     mark_as_invoiced: bool = Field(description="True ONLY if the user explicitly commanded to mark an existing order ID as invoiced or finalized.")
     explain_reasoning: bool = Field(description="True ONLY if Siny explicitly asks to explain the reasoning, logic, or math behind a previously generated Order ID.")
+    is_field_override: bool = Field(description="True ONLY if the user wants to manually change/override a specific field (delivery date, cost, or machine) on an existing order.")
+    override_field: Optional[str] = Field(description="If is_field_override is True, which field to change: 'delivery_date', 'cost', or 'machine'. Leave null otherwise.")
+    override_value: Optional[str] = Field(description="If is_field_override is True, the new value Siny wants to set (e.g. '2026-04-10', '450', 'Aakruthi'). Leave null otherwise.")
     is_missing_info: bool = Field(description="True if ANY of fabric_type, embroidery_type, or stitch_count are missing and she DID NOT provide an order ID and mark_as_invoiced is False.")
     missing_fields_prompt: Optional[str] = Field(description="If is_missing_info is True, generate a friendly short text asking Siny for the missing details.")
 
@@ -65,6 +68,16 @@ class OrderCollectorAgent:
             print(f"[{self.name}] Intercepted Database Explanation Request for {extraction.referenced_order_id}")
             state.is_explanation_request = True
             state.order_id = extraction.referenced_order_id
+            state.current_agent = "End"
+            return state
+
+        # ✨ 0.6 Intercept Manual Field Override commands! ✨
+        if extraction.is_field_override and extraction.referenced_order_id and extraction.override_field and extraction.override_value:
+            print(f"[{self.name}] Intercepted Field Override: '{extraction.override_field}' -> '{extraction.override_value}' on {extraction.referenced_order_id}")
+            state.is_field_override = True
+            state.order_id = extraction.referenced_order_id
+            state.override_field = extraction.override_field
+            state.override_value = extraction.override_value
             state.current_agent = "End"
             return state
         

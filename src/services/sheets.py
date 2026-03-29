@@ -250,3 +250,78 @@ class GoogleSheetsService:
         except Exception as e:
             print(f"[SheetsAPI] Critical Row Mutation Failure: {e}")
             return False
+
+    def update_order_field(self, order_id: str, field: str, new_value: str) -> bool:
+        """
+        Allows Siny to manually override an AI-generated field on an existing order.
+        Writes to override columns L (delivery_date), M (cost), or N (machine).
+        Also appends a timestamped note to Column K (reasoning log).
+        
+        Column mapping:
+          L = Override Delivery Date
+          M = Override Cost (Rs)
+          N = Override Machine
+        """
+        if not self.service or not order_id: return False
+
+        FIELD_MAP = {
+            "delivery_date": "L",
+            "cost": "M",
+            "machine": "N",
+        }
+        
+        target_col = FIELD_MAP.get(field.lower().replace(" ", "_"))
+        if not target_col:
+            print(f"[SheetsAPI] Unknown override field '{field}'. Must be one of: {list(FIELD_MAP.keys())}")
+            return False
+
+        try:
+            # Step 1: Find row index by Order ID in Column B
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, range="B:B"
+            ).execute()
+            rows = result.get('values', [])
+            target_row = None
+            for i, row in enumerate(rows):
+                if row and row[0] == order_id:
+                    target_row = i + 1
+                    break
+
+            if not target_row:
+                print(f"[SheetsAPI] Override failed: {order_id} not found.")
+                return False
+
+            # Step 2: Read existing Column K reasoning so we can append, not overwrite
+            k_result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, range=f"K{target_row}"
+            ).execute()
+            existing_k = ""
+            k_vals = k_result.get('values', [])
+            if k_vals and k_vals[0]:
+                existing_k = k_vals[0][0]
+
+            # Step 3: Write override value to correct column (L/M/N)
+            self.service.spreadsheets().values().update(
+                spreadsheetId=self.spreadsheet_id,
+                range=f"{target_col}{target_row}",
+                valueInputOption="USER_ENTERED",
+                body={'values': [[new_value]]}
+            ).execute()
+
+            # Step 4: Append override audit note to Column K
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+            override_note = f"\n[Override - {timestamp}]: Siny manually changed '{field}' to '{new_value}'."
+            updated_k = existing_k + override_note
+            self.service.spreadsheets().values().update(
+                spreadsheetId=self.spreadsheet_id,
+                range=f"K{target_row}",
+                valueInputOption="USER_ENTERED",
+                body={'values': [[updated_k]]}
+            ).execute()
+
+            print(f"[SheetsAPI] Override success: {order_id} col {target_col} = '{new_value}'")
+            return True
+
+        except Exception as e:
+            print(f"[SheetsAPI] Override field update failed: {e}")
+            return False

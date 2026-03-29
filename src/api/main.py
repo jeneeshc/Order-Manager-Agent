@@ -116,6 +116,34 @@ async def receive_whatsapp_message(request: Request):
                                 whatsapp_service.send_text_message(sender_phone, msg)
                                 return {"status": "received"}
                             
+                            # ✨ NEW: Intercept Manual Field Override Commands! ✨
+                            if final_state_dict.get("is_field_override"):
+                                oid = final_state_dict.get("order_id")
+                                field = final_state_dict.get("override_field")
+                                value = final_state_dict.get("override_value")
+                                memory_service.clear_state(sender_phone)
+                                
+                                success = db_service.update_order_field(oid, field, value)
+                                
+                                FIELD_LABELS = {
+                                    "delivery_date": "Delivery Date (Col L)",
+                                    "cost": "Cost (Col M)",
+                                    "machine": "Machine (Col N)",
+                                }
+                                label = FIELD_LABELS.get(field, field)
+                                
+                                if success:
+                                    msg = (f"✅ Override applied!\n"
+                                           f"• Order: {oid}\n"
+                                           f"• Field: {label}\n"
+                                           f"• New Value: {value}\n"
+                                           f"📝 Reasoning log (Col K) updated with timestamp.")
+                                else:
+                                    msg = f"❌ Override failed: Could not find order {oid} in the database, or the field '{field}' is not recognised."
+                                    
+                                whatsapp_service.send_text_message(sender_phone, msg)
+                                return {"status": "received"}
+                            
                             # 3. Handle End States & Logic Responses
                             if final_state_dict.get("is_missing_info"):
                                 # Agent 1 determined it needed more info. Save memory so it doesn't forget!

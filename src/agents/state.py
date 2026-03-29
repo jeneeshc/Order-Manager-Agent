@@ -38,3 +38,8 @@ class AgentState(BaseModel):
     is_status_update: bool = Field(default=False)
     new_invoice_status: Optional[str] = None
     is_explanation_request: bool = Field(default=False)
+    
+    # Manual Field Override state
+    is_field_override: bool = Field(default=False)
+    override_field: Optional[str] = None   # "delivery_date" | "cost" | "machine"
+    override_value: Optional[str] = None   # The new value Siny specified
