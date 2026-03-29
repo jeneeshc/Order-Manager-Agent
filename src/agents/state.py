@@ -32,3 +32,7 @@ class AgentState(BaseModel):
     current_agent: str = Field(default="OrderCollector")
     is_missing_info: bool = Field(default=False)
     missing_fields_prompt: Optional[str] = None
+    
+    # State overrides for Native Database Mutations
+    is_status_update: bool = Field(default=False)
+    new_invoice_status: Optional[str] = None

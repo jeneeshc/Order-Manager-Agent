@@ -12,7 +12,8 @@ class OrderExtractionModel(BaseModel):
     stitch_count: Optional[int] = Field(description="The exact numeric total of stitches requested. Leave null if not stated.")
     requested_delivery_date: Optional[str] = Field(description="The day or date requested for delivery. Leave null if not stated.")
     referenced_order_id: Optional[str] = Field(description="If Siny explicitly types a previous Order ID (like CJS-12345), exactly extract it here. Leave null if she does not mention one.")
-    is_missing_info: bool = Field(description="True if ANY of fabric_type, embroidery_type, or stitch_count are missing and she DID NOT provide an order ID.")
+    mark_as_invoiced: bool = Field(description="True ONLY if the user explicitly commanded to mark an existing order ID as invoiced or finalized.")
+    is_missing_info: bool = Field(description="True if ANY of fabric_type, embroidery_type, or stitch_count are missing and she DID NOT provide an order ID and mark_as_invoiced is False.")
     missing_fields_prompt: Optional[str] = Field(description="If is_missing_info is True, generate a friendly short text asking Siny for the missing details.")
 
 class OrderCollectorAgent:
@@ -48,6 +49,15 @@ class OrderCollectorAgent:
         
         # Generative AI reads the human text and extracts the core fields
         extraction: OrderExtractionModel = self.extractor.invoke(prompt)
+        
+        # ✨ 0. Intercept explicit Database Mutation Overrides instantly! ✨
+        if extraction.mark_as_invoiced and extraction.referenced_order_id:
+            print(f"[{self.name}] Intercepted Database Mutation Command for {extraction.referenced_order_id}")
+            state.is_status_update = True
+            state.new_invoice_status = "Invoiced"
+            state.order_id = extraction.referenced_order_id
+            state.current_agent = "End" # Force Graph to skip Schedulers and Estimators!
+            return state
         
         # Hydrate from Google Sheets if an Order ID was parsed!
         if extraction.referenced_order_id:

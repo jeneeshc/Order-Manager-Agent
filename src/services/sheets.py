@@ -46,7 +46,7 @@ class GoogleSheetsService:
             state.machine_assigned or "Pending",
             state.estimated_completion_date or "Unknown",
             f"Rs {state.total_cost_rs or 0}",
-            state.invoice_status,
+            state.invoice_status or "Estimated",
             state.scheduling_reasoning or "No logic recorded"
         ]]
         
@@ -162,3 +162,73 @@ class GoogleSheetsService:
         except Exception as e:
             print(f"[SheetsAPI] Warning: 'Holidays' tab not found or unreadable: {e}")
             return holidays
+
+    def get_costing_rules(self) -> dict:
+        """
+        Extracts variable pricing properties explicitly from Siny's 'Costing' tab.
+        Assumes Column A = Rule Name (e.g. 'Base Rate', 'Velvet'), Column B = Numeric Rate/Multiplier.
+        """
+        rules = {}
+        if not self.service: return rules
+        
+        try:
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, range="Costing!A:B"
+            ).execute()
+            rows = result.get('values', [])
+            
+            for row in rows:
+                if len(row) > 1:
+                    key = str(row[0]).strip().lower()
+                    try:
+                        val = float(row[1])
+                        rules[key] = val
+                    except ValueError:
+                        pass
+                        
+            print(f"[SheetsAPI] Extracted {len(rules)} explicit pricing rules from 'Costing' tab.")
+            return rules
+        except Exception as e:
+            print(f"[SheetsAPI] Warning: 'Costing' tab execution failed: {e}")
+            return rules
+
+    def update_order_status(self, order_id: str, new_status: str) -> bool:
+        """
+        Natively locates the precise row mathematical index of the referenced Order ID 
+        and physically overwrites the specific Column J value natively.
+        """
+        if not self.service or not order_id: return False
+        
+        try:
+            # Step 1: Query the entire Column B explicitly to find the Row Index
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, range="B:B"
+            ).execute()
+            
+            rows = result.get('values', [])
+            target_row_num = None
+            
+            for index, row in enumerate(rows):
+                if row and row[0] == order_id:
+                    target_row_num = index + 1 # Google Sheets is mathematically 1-indexed natively
+                    break
+                    
+            if not target_row_num:
+                print(f"[SheetsAPI] Could not mutate status: {order_id} strictly missing from database.")
+                return False
+                
+            # Step 2: Push the new Status explicitly forcing Column J
+            body = {'values': [[new_status]]}
+            self.service.spreadsheets().values().update(
+                spreadsheetId=self.spreadsheet_id,
+                range=f"J{target_row_num}",
+                valueInputOption="USER_ENTERED",
+                body=body
+            ).execute()
+            
+            print(f"[SheetsAPI] Success executing Row Mutation: {order_id} updated to {new_status}")
+            return True
+            
+        except Exception as e:
+            print(f"[SheetsAPI] Critical Row Mutation Failure: {e}")
+            return False

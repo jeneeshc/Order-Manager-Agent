@@ -73,6 +73,22 @@ async def receive_whatsapp_message(request: Request):
                             # Start Graph cascading sequence
                             final_state_dict = cjs_bot.invoke(initial_state)
                             
+                            # ✨ NEW: Intercept Status Overrides BEFORE Normal Logic! ✨
+                            if final_state_dict.get("is_status_update"):
+                                success = db_service.update_order_status(
+                                    final_state_dict.get("order_id"), 
+                                    final_state_dict.get("new_invoice_status")
+                                )
+                                memory_service.clear_state(sender_phone)
+                                
+                                if success:
+                                    msg = f"✅ Success: Order {final_state_dict.get('order_id')} securely marked as {final_state_dict.get('new_invoice_status')} in Siny's Database!"
+                                else:
+                                    msg = f"❌ Error: Could not find order {final_state_dict.get('order_id')} natively in the active database."
+                                    
+                                whatsapp_service.send_text_message(sender_phone, msg)
+                                return {"status": "received"}
+                            
                             # 3. Handle End States & Logic Responses
                             if final_state_dict.get("is_missing_info"):
                                 # Agent 1 determined it needed more info. Save memory so it doesn't forget!
@@ -91,6 +107,7 @@ async def receive_whatsapp_message(request: Request):
                                          f"• Cost Estimate: Rs {rebuilt_state.total_cost_rs}\n"
                                          f"• Complete By: {rebuilt_state.estimated_completion_date}\n"
                                          f"• Machine Chosen: {rebuilt_state.machine_assigned}\n"
+                                         f"• Invoice Status: {rebuilt_state.invoice_status}\n"
                                          f"• Saved To DB: {order_id}")
                                 whatsapp_service.send_text_message(sender_phone, quote)
                                 
