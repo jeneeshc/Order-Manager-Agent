@@ -35,7 +35,7 @@ class GoogleSheetsService:
         # Generate a unique tracking ID
         order_id = f"CJS-{str(uuid.uuid4())[:6].upper()}"
         
-        # New column order (A-O) matching workflow progression
+        # New column order (A-M) matching workflow progression
         values = [[
             datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),  # A: Order Date
             order_id,                                               # B: Order ID
@@ -48,7 +48,8 @@ class GoogleSheetsService:
             state.estimated_completion_date or "Unknown",          # I: Estimated Delivery Date
             f"Rs {state.total_cost_rs or 0}",                      # J: Estimated Cost
             state.invoice_status or "Estimated",                   # K: Payment Status
-            state.aggregated_reasoning or "No logic recorded"      # L: Reasoning
+            state.aggregated_reasoning or "No logic recorded",     # L: Reasoning
+            state.quantity or 1                                    # M: Quantity
         ]]
         
         body = {'values': values}
@@ -111,12 +112,13 @@ class GoogleSheetsService:
                 state.estimated_completion_date or "Unknown",
                 f"Rs {state.total_cost_rs or 0}",
                 state.invoice_status or "Estimated",
-                existing_reasoning + "\n[Update Session]: " + (state.aggregated_reasoning or "")
+                existing_reasoning + "\n[Update Session]: " + (state.aggregated_reasoning or ""),
+                state.quantity or 1 # M: Quantity
             ]]
             
             self.service.spreadsheets().values().update(
                 spreadsheetId=self.spreadsheet_id,
-                range=f"E{target_row}:L{target_row}",
+                range=f"E{target_row}:M{target_row}",
                 valueInputOption="USER_ENTERED",
                 body={'values': updated_values}
             ).execute()
@@ -156,7 +158,8 @@ class GoogleSheetsService:
                         "completion_date":  row[8]  if len(row) > 8  else None,
                         "cost":             row[9]  if len(row) > 9  else None,
                         "status":           row[10] if len(row) > 10 else None,
-                        "reasoning":        row[11] if len(row) > 11 else "No historical agent reasoning log found in Column L."
+                        "reasoning":        row[11] if len(row) > 11 else "No historical agent reasoning log found in Column L.",
+                        "quantity":         int(row[12]) if len(row) > 12 and str(row[12]).isdigit() else None
                     }
             print(f"[SheetsAPI] Order {order_id} not found in database.")
             return None

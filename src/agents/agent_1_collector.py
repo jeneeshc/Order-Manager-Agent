@@ -11,6 +11,7 @@ class OrderExtractionModel(BaseModel):
     fabric_type: Optional[str] = Field(None, description="Material/fabric type.")
     embroidery_type: Optional[str] = Field(None, description="Embroidery style/type.")
     stitch_count: Optional[int] = Field(None, description="Total stitch count (numeric).")
+    quantity: Optional[int] = Field(None, description="Total number of items (numeric).")
     requested_delivery_date: Optional[str] = Field(None, description="Delivery date/day.")
     referenced_order_id: Optional[str] = Field(None, description="Existing Order ID (e.g., CJS-12345) mentioned.")
     mark_as_invoiced: bool = Field(False, description="True if asked to mark order as invoiced.")
@@ -55,6 +56,7 @@ class OrderCollectorAgent:
         TASK:
         Extract any business details from this message.
         If an Order ID (like CJS-12345) is mentioned, exactly extract it into 'referenced_order_id'.
+        If they specify a quantity (like "5 pieces" or "numbers 10"), extract that too.
         If they specify a new material, style, or stitch count for an existing order, extract those too.
         If Siny asks for a daily summary, work schedule, status update on her tasks, or anything about "what needs to be done today", set 'is_secretary_query=True'.
         """
@@ -139,6 +141,9 @@ class OrderCollectorAgent:
 
         if extraction.requested_delivery_date:
             state.requested_delivery_date = extraction.requested_delivery_date
+            
+        if extraction.quantity:
+            state.quantity = extraction.quantity
             
         if extraction.confirm_duplicate:
             state.is_duplicate_confirmed = True

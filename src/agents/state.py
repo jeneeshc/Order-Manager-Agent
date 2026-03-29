@@ -16,6 +16,7 @@ class AgentState(BaseModel):
     fabric_type: Optional[str] = None
     embroidery_type: Optional[str] = None
     stitch_count: Optional[int] = None
+    quantity: Optional[int] = None
     requested_delivery_date: Optional[str] = None
     order_id: Optional[str] = None
     
