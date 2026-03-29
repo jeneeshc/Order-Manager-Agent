@@ -35,8 +35,10 @@ class MemoryService:
         """Fetch the previous conversation state for this user."""
         return self.active_sessions.get(sender_phone)
 
-    def save_state(self, sender_phone: str, state_dict: dict):
+    def save_state(self, sender_phone: str, state):
         """Persist the running context of the conversation and sync to disk."""
+        # Ensure we save as a dictionary if it's a Pydantic model
+        state_dict = state.model_dump() if hasattr(state, "model_dump") else state
         self.active_sessions[sender_phone] = state_dict
         self._save_to_disk()
 
