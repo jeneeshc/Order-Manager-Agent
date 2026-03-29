@@ -2,7 +2,7 @@ import os
 from pydantic import BaseModel, Field
 from typing import Optional
 from src.agents.state import AgentState
-from langchain_google_vertexai import ChatVertexAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 class OrderExtractionModel(BaseModel):
     """Rigid JSON schema for the LLM to fill out based on Siny's WhatsApp text."""
@@ -17,11 +17,10 @@ class OrderCollectorAgent:
     def __init__(self):
         self.name = "Order Collector Agent"
         
-        # Initialize natively via Vertex AI to bypass API Key failures entirely!
-        self.llm = ChatVertexAI(
-            model_name="gemini-1.5-flash-002",  # Using updated alias
-            project="ai-agent-462312",
-            location="us-central1",
+        # Initialize cleanly via API Studio explicitly pointing to the GEMINI_API_KEY constant!
+        self.llm = ChatGoogleGenerativeAI(
+            model="gemini-1.5-flash",
+            google_api_key=os.environ.get("GEMINI_API_KEY"),
             temperature=0
         )
         
