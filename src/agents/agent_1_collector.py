@@ -2,13 +2,7 @@ import os
 from pydantic import BaseModel, Field
 from typing import Optional
 from src.agents.state import AgentState
-from langchain_google_vertexai import ChatVertexAI
-
-# Authenticate GCP natively using the JSON bot file ONLY if we are testing locally!
-# In Cloud Run, GCP instances authenticate their Service Accounts implicitly.
-creds_path = r"d:\Projects\CJSDesigns\credentials.json"
-if os.path.exists(creds_path):
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds_path
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 class OrderExtractionModel(BaseModel):
     """Rigid JSON schema for the LLM to fill out based on Siny's WhatsApp text."""
@@ -23,11 +17,9 @@ class OrderCollectorAgent:
     def __init__(self):
         self.name = "Order Collector Agent"
         
-        # Initialize natively via Vertex and GCP IAM!
-        self.llm = ChatVertexAI(
-            model_name="gemini-1.5-flash-001",
-            project="ai-agent-462312",
-            location="us-central1",
+        # Initialize natively via AI Studio (far more reliable across billing constraints!)
+        self.llm = ChatGoogleGenerativeAI(
+            model="gemini-1.5-flash",
             temperature=0
         )
         
