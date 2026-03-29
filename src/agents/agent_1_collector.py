@@ -19,7 +19,8 @@ class OrderExtractionModel(BaseModel):
     override_field: Optional[str] = Field(description="If is_field_override is True, which field to change: 'delivery_date', 'cost', or 'machine'. Leave null otherwise.")
     override_value: Optional[str] = Field(description="If is_field_override is True, the new value Siny wants to set. Leave null otherwise.")
     is_payment_query: bool = Field(description="True ONLY if Siny is asking about pending payments, unpaid orders, or items awaiting payment.")
-    is_missing_info: bool = Field(description="True if ANY of fabric_type, embroidery_type, or stitch_count are missing AND she DID NOT provide an order ID AND mark_as_invoiced, is_payment_query, explain_reasoning, and is_field_override are all False.")
+    confirm_duplicate: bool = Field(description="True ONLY if the user explicitly says 'Yes' or confirms they want to proceed with a duplicate order that was previously warned about.")
+    is_missing_info: bool = Field(description="True if ANY of customer_name, fabric_type, embroidery_type, or stitch_count are missing AND she DID NOT provide an order ID AND mark_as_invoiced, is_payment_query, explain_reasoning, and is_field_override are all False.")
     missing_fields_prompt: Optional[str] = Field(description="If is_missing_info is True, generate a friendly short text asking Siny for the missing details including customer name if not provided.")
 
 class OrderCollectorAgent:
@@ -45,12 +46,17 @@ class OrderCollectorAgent:
         
         PRIOR KNOWLEDGE EXTRACTED: 
         (If the customer already provided these earlier, do not extract them again. You only need to extract what the customer just said in the new message!)
+        - Known Customer Name: {state.customer_name or 'None'}
         - Known Fabric: {state.fabric_type or 'None'}
         - Known Embroidery: {state.embroidery_type or 'None'}
         - Known Stitches: {state.stitch_count or 'None'}
+        - Is Waiting For Duplicate Confirmation? {state.missing_fields_prompt.startswith('It looks like') if state.missing_fields_prompt else 'False'}
+        
+        Last Question Asked to User: {state.missing_fields_prompt or 'None'}
         
         Extract any NEW sewing/business details from this Whatsapp message and output the structured JSON.
-        If the combination of Known properties AND your New properties still leaves the main 3 fields incomplete, set is_missing_info=true and ask for specifically what is still missing!
+        If the combination of Known properties AND your New properties still leaves the main 4 fields (customer_name, fabric_type, embroidery_type, stitch_count) incomplete, set is_missing_info=true and ask for specifically what is still missing!
+        If they are replying 'yes' to a duplicate check, output confirm_duplicate=true.
         """
         
         # Generative AI reads the human text and extracts the core fields
@@ -120,13 +126,29 @@ class OrderCollectorAgent:
 
         if extraction.requested_delivery_date:
             state.requested_delivery_date = extraction.requested_delivery_date
+            
+        if extraction.confirm_duplicate:
+            state.is_duplicate_confirmed = True
 
-        # Decision Logic: requires Fabric, Embroidery Type, Stitch Count, and Customer Name
-        if not state.fabric_type or not state.embroidery_type or not state.stitch_count:
+        # Decision Logic: requires Customer Name, Fabric, Embroidery Type, and Stitch Count
+        if not state.customer_name or not state.fabric_type or not state.embroidery_type or not state.stitch_count:
             print(f"[{self.name}] Required parameters missing. Returning to WhatsApp.")
             state.is_missing_info = True
             state.missing_fields_prompt = extraction.missing_fields_prompt or "Could you please share the fabric type, embroidery style, stitch count, and your name?"
         else:
+            # We have all info — check for duplicates!
+            if not state.is_duplicate_confirmed and not extraction.referenced_order_id:
+                db = GoogleSheetsService()
+                is_duplicate = db.check_duplicate_order(
+                    state.customer_name, state.sender_id, state.fabric_type, state.embroidery_type, state.stitch_count
+                )
+                if is_duplicate:
+                    print(f"[{self.name}] Duplicate detected! Prompting Siny for confirmation.")
+                    state.is_missing_info = True
+                    state.missing_fields_prompt = f"It looks like an identical order was already placed by {state.customer_name} today ({state.stitch_count} stitches of {state.embroidery_type} on {state.fabric_type}). Are you sure you want to duplicate it? Please say 'Yes' to confirm."
+                    return state
+
+            # Passes all checks
             state.is_missing_info = False
             state.current_agent = "ProductionScheduler"
 

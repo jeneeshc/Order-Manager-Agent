@@ -372,3 +372,51 @@ class GoogleSheetsService:
         except Exception as e:
             print(f"[SheetsAPI] get_pending_payments failed: {e}")
             return {}
+
+    def check_duplicate_order(self, customer_name: str, phone: str, fabric_type: str, embroidery_type: str, stitch_count: int) -> bool:
+        """
+        Scans recent orders (last 24 hours) for an identical match based on:
+        Customer Name, Phone, Fabric, Embroidery Type, and Stitch Count.
+        Returns True if a probable duplicate is found.
+        """
+        if not self.service: return False
+        try:
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, range="A:O"
+            ).execute()
+            rows = result.get('values', [])
+            
+            cutoff = datetime.datetime.now() - datetime.timedelta(hours=24)
+            
+            for i, row in enumerate(rows):
+                if i == 0 or len(row) < 7: continue  # skip header or short rows
+                
+                # A: Order Date
+                date_str = str(row[0]).strip()
+                try:
+                    order_dt = datetime.datetime.strptime(date_str, "%Y-%m-%d %H:%M")
+                    if order_dt < cutoff:
+                        continue # Skip old orders
+                except ValueError:
+                    pass
+                
+                # Compare fields loosely (case-insensitive)
+                r_customer = str(row[2]).strip().lower() if len(row) > 2 else ""
+                r_phone    = str(row[3]).strip() if len(row) > 3 else ""
+                r_fabric   = str(row[4]).strip().lower() if len(row) > 4 else ""
+                r_style    = str(row[5]).strip().lower() if len(row) > 5 else ""
+                r_stitch   = str(row[6]).strip() if len(row) > 6 else ""
+                
+                if (r_customer == customer_name.strip().lower() and
+                    r_phone == phone.strip() and
+                    r_fabric == fabric_type.strip().lower() and
+                    r_style == embroidery_type.strip().lower() and
+                    r_stitch == str(stitch_count).strip()):
+                    print(f"[SheetsAPI] Duplicate detected from {order_dt} for {customer_name}")
+                    return True
+                    
+            return False
+            
+        except Exception as e:
+            print(f"[SheetsAPI] Duplicate check failed: {e}")
+            return False

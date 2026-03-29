@@ -40,6 +40,7 @@ class AgentState(BaseModel):
     new_invoice_status: Optional[str] = None
     is_explanation_request: bool = Field(default=False)
     is_payment_query: bool = Field(default=False)
+    is_duplicate_confirmed: bool = Field(default=False)
     
     # Manual Field Override state
     is_field_override: bool = Field(default=False)
