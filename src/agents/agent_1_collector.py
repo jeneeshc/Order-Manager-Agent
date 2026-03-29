@@ -19,7 +19,7 @@ class OrderCollectorAgent:
         
         # Initialize cleanly via API Studio explicitly pointing to the GEMINI_API_KEY constant!
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-1.5-flash",
+            model="gemini-flash-latest",
             google_api_key=os.environ.get("GEMINI_API_KEY"),
             temperature=0
         )
