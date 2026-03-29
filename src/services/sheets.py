@@ -136,7 +136,7 @@ class GoogleSheetsService:
     def get_holidays(self) -> list:
         """
         Reads explicitly marked off-days from the 'Holidays' tab in Siny's Google Sheet.
-        Expects Column A to contain dates formatted strictly as YYYY-MM-DD.
+        Explicitly bypasses Header A1 and parses strict 2-April-2026 formats natively.
         """
         holidays = []
         if not self.service: return holidays
@@ -144,18 +144,27 @@ class GoogleSheetsService:
         try:
             result = self.service.spreadsheets().values().get(
                 spreadsheetId=self.spreadsheet_id, 
-                range="Holidays!A:A"
+                range="Holidays!A:B"
             ).execute()
             
             rows = result.get('values', [])
-            for row in rows:
-                if row:
+            for index, row in enumerate(rows):
+                if index == 0: continue # Safely skip header row
+                
+                if len(row) > 0:
+                    date_str = str(row[0]).strip()
                     try:
-                        dt = datetime.datetime.strptime(row[0].strip(), "%Y-%m-%d").date()
+                        # Map native Siny format: 2-April-2026
+                        dt = datetime.datetime.strptime(date_str, "%d-%B-%Y").date()
                         holidays.append(dt)
                     except ValueError:
-                        pass
-                        
+                        # ISO 8601 fallback safety
+                        try:
+                            dt = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+                            holidays.append(dt)
+                        except ValueError:
+                            pass
+                            
             print(f"[SheetsAPI] Extracted {len(holidays)} explicit holidays from 'Holidays' tab.")
             return holidays
             
@@ -165,31 +174,39 @@ class GoogleSheetsService:
 
     def get_costing_rules(self) -> dict:
         """
-        Extracts variable pricing properties explicitly from Siny's 'Costing' tab.
-        Assumes Column A = Rule Name (e.g. 'Base Rate', 'Velvet'), Column B = Numeric Rate/Multiplier.
+        Extracts variable combinatorial pricing natively from Siny's 'Costing' tab.
+        Strict 5-Column Requirement: [Embroidery(A), Material(B), Unit(C), UnitCount(D), Cost(E)]
         """
         rules = {}
         if not self.service: return rules
         
         try:
             result = self.service.spreadsheets().values().get(
-                spreadsheetId=self.spreadsheet_id, range="Costing!A:B"
+                spreadsheetId=self.spreadsheet_id, range="Costing!A:E"
             ).execute()
             rows = result.get('values', [])
             
-            for row in rows:
-                if len(row) > 1:
-                    key = str(row[0]).strip().lower()
+            for index, row in enumerate(rows):
+                if index == 0: continue # Pass header strictly
+                
+                if len(row) >= 5:
+                    embroidery = str(row[0]).strip().lower()
+                    material = str(row[1]).strip().lower()
                     try:
-                        val = float(row[1])
-                        rules[key] = val
+                        unit_count = float(row[3])
+                        cost = float(row[4])
+                        # Bind combinatorial tuple!
+                        rules[(embroidery, material)] = {
+                            "unit_count": unit_count,
+                            "cost": cost
+                        }
                     except ValueError:
                         pass
                         
-            print(f"[SheetsAPI] Extracted {len(rules)} explicit pricing rules from 'Costing' tab.")
+            print(f"[SheetsAPI] Extracted {len(rules)} combinatoric pricing pairs from 'Costing' tab.")
             return rules
         except Exception as e:
-            print(f"[SheetsAPI] Warning: 'Costing' tab execution failed: {e}")
+            print(f"[SheetsAPI] Warning: 'Costing' tab 5-Column execution failed: {e}")
             return rules
 
     def update_order_status(self, order_id: str, new_status: str) -> bool:

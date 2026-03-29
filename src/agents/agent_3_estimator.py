@@ -8,35 +8,35 @@ class EstimationAgent:
     def process(self, state: AgentState) -> AgentState:
         """
         Agent 3 Logic:
-        - Re-confirm stitch count.
-        - Dynamically scan 'Costing' tab in Siny's Google Sheet for Base Rate and Multipliers.
-        - Calculate cost = (Stitch Count / 1000) * Live Rate * Multiplier.
+        - Re-confirm stitch count natively.
+        - Cross-Pollinate Embroidery & Material matching exactly against Siny's Costing Tuple DB.
+        - Calculate cost = (Stitch Count / Unit Count) * Cost in Rupees.
         """
         if not state.stitch_count: return state
             
-        print(f"[{self.name}] Connecting to Database for Dynamic Pricing Matrix...")
+        print(f"[{self.name}] Connecting to Database for Dynamic Costing Combinatorics...")
         
         db = GoogleSheetsService()
         pricing_rules = db.get_costing_rules()
         
-        # Determine Base Rate with generic graceful Fallback 
-        base_rate = pricing_rules.get("base rate", 8.0) # Rs per 1000 natively
-        base_cost = (state.stitch_count / 1000.0) * base_rate
+        target_emb = str(state.embroidery_type).strip().lower() if state.embroidery_type else ""
+        target_mat = str(state.fabric_type).strip().lower() if state.fabric_type else ""
         
-        # Dynamic Fabric Multiplier matching from Costing Tab!
-        multiplier = 1.0
-        if state.fabric_type:
-            fab = state.fabric_type.lower()
-            if fab in pricing_rules:
-                multiplier = pricing_rules[fab]
-                print(f"[{self.name}] Matched {fab} exactly in Pricing DB. Multiplier: {multiplier}")
-            elif fab in ['silk', 'leather', 'velvet'] and not pricing_rules:
-                multiplier = 1.2
-                
-        state.total_cost_rs = round(base_cost * multiplier, 2)
+        # 1. Exact Combinatorial Match inside the 5-Column Database!
+        matched_rule = pricing_rules.get((target_emb, target_mat))
+        
+        if matched_rule:
+             print(f"[{self.name}] Natively Matched precise (Embroidery, Material) Tuple from cloud: {matched_rule}")
+             u_count = matched_rule["unit_count"]
+             u_cost = matched_rule["cost"]
+             state.total_cost_rs = round((state.stitch_count / u_count) * u_cost, 2)
+        else:
+             print(f"[{self.name}] Combinatorial pair ({target_emb}, {target_mat}) NOT natively mapped. Engaging Base fallback formula!")
+             state.total_cost_rs = round((state.stitch_count / 1000.0) * 8.0, 2)
+             
         state.invoice_status = "Estimated"
         
-        print(f"[{self.name}] Final Cost Estimate: Rs {state.total_cost_rs} (Base: {base_rate}, Mult: {multiplier})")
+        print(f"[{self.name}] Final Calculated Cost: Rs {state.total_cost_rs}")
         state.current_agent = "SocialMediaAgent"
         
         return state
