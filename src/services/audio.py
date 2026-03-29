@@ -14,7 +14,7 @@ class AudioTranscriptionService:
     def __init__(self):
         self.name = "Audio Transcription Service"
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-1.5-flash-latest",
+            model="gemini-flash-latest",
             google_api_key=os.environ.get("GEMINI_API_KEY"),
             temperature=0
         )
