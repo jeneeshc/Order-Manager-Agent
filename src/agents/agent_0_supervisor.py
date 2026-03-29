@@ -52,10 +52,10 @@ class SupervisorAgent:
         - 'invoice': Handles payment status, pending dues, and finalizes orders.
         
         DECISION RULES:
-        1. CRITICAL: If 'Missing Info? True' (is_missing_info), you MUST route exactly to 'END'. This means a worker already identified missing fields and we need Siny's response.
-        2. If Siny asks for a daily summary, work schedule, or "what to do today", route to 'secretary'.
-        3. If Siny is placing a NEW order or updating an order, start with 'collector'.
-        4. Only move to 'scheduler' and 'estimator' after 'collector' confirms ALL required info (is_missing_info=False).
+        1. CRITICAL: If 'Missing Info? True' (is_missing_info), you MUST route to 'collector' to gather the missing details. If you have already tried 'collector' and 'is_missing_info' remains True, route to 'END' to ask Siny for clarification.
+        2. If 'Missing Info? False' or this is a fresh user message, ALWAYS prioritize routing to 'collector' first if an order is involved.
+        3. If Siny asks for a daily summary, work schedule, or "what to do today", route to 'secretary'.
+        4. Proceed to 'scheduler' and 'estimator' only after 'collector' confirms ALL required info (is_missing_info=False).
         5. If all business logic (scheduling, cost, invoicing) is complete or it's a simple query already answered, route to 'END'.
         """
         

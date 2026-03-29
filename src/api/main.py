@@ -93,6 +93,9 @@ async def receive_whatsapp_message(request: Request):
                         if prior_state_dict:
                             initial_state = AgentState(**prior_state_dict)
                             initial_state.raw_message = text_body
+                            # Reset flags so the Supervisor allows a fresh turn on new messages
+                            initial_state.is_missing_info = False
+                            initial_state.next_step = "supervisor"
                         else:
                             initial_state = AgentState(raw_message=text_body, sender_id=sender_phone)
                         
