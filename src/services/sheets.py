@@ -54,7 +54,7 @@ class GoogleSheetsService:
         try:
             result = self.service.spreadsheets().values().append(
                 spreadsheetId=self.spreadsheet_id,
-                range="Sheet1!A:J",
+                range="A:J",
                 valueInputOption="USER_ENTERED",
                 body=body
             ).execute()
@@ -76,7 +76,7 @@ class GoogleSheetsService:
         try:
             result = self.service.spreadsheets().values().get(
                 spreadsheetId=self.spreadsheet_id,
-                range="Sheet1!A:J"
+                range="A:J"
             ).execute()
             
             rows = result.get('values', [])
