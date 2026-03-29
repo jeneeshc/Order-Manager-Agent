@@ -7,6 +7,7 @@ from src.workflow.main_graph import cjs_bot
 from src.agents.state import AgentState
 from src.services.whatsapp import WhatsAppService
 from src.services.sheets import GoogleSheetsService
+from src.services.memory import MemoryService
 
 # Load environment configuration
 load_dotenv()
@@ -15,6 +16,7 @@ app = FastAPI(title="CJS Designs - WhatsApp Agent Webhook")
 # Initialize robust service integrations
 whatsapp_service = WhatsAppService()
 db_service = GoogleSheetsService()
+memory_service = MemoryService()
 
 @app.get("/")
 def health_check():
@@ -57,17 +59,30 @@ async def receive_whatsapp_message(request: Request):
                             print(f"\n[WEBHOOK] Incoming SMS from {sender_phone}: '{text_body}'\n")
                             
                             # ✨ 2. The Core Execution: Invoke Agents ✨
-                            initial_state = AgentState(raw_message=text_body, sender_id=sender_phone)
+                            # Attempt to restore the user's previous context from memory amnesia 
+                            prior_state_dict = memory_service.get_state(sender_phone)
+                            
+                            if prior_state_dict:
+                                print(f"[MEMORY] Resuming context for {sender_phone}...")
+                                initial_state = AgentState(**prior_state_dict)
+                                initial_state.raw_message = text_body # Specifically inject the newest message
+                            else:
+                                print(f"[MEMORY] Starting fresh session for {sender_phone}...")
+                                initial_state = AgentState(raw_message=text_body, sender_id=sender_phone)
                             
                             # Start Graph cascading sequence
                             final_state_dict = cjs_bot.invoke(initial_state)
                             
                             # 3. Handle End States & Logic Responses
                             if final_state_dict.get("is_missing_info"):
-                                # Agent 1 determined it needed more info
+                                # Agent 1 determined it needed more info. Save memory so it doesn't forget!
+                                memory_service.save_state(sender_phone, final_state_dict)
                                 whatsapp_service.send_text_message(sender_phone, final_state_dict.get("missing_fields_prompt"))
                             else:
-                                # Data extraction was perfect. Agent 2 & 3 ran math. DB saves row.
+                                # Data extraction was perfect. Agent 2 & 3 ran math. 
+                                # Clear the conversation state!
+                                memory_service.clear_state(sender_phone)
+                                
                                 rebuilt_state = AgentState(**final_state_dict)
                                 order_id = db_service.append_order(rebuilt_state)
                                 

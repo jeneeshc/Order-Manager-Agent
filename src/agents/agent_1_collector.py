@@ -30,25 +30,43 @@ class OrderCollectorAgent:
     def process(self, state: AgentState) -> AgentState:
         print(f"[{self.name}] Activating Gemini LLM on: {state.raw_message}")
         
+        # Build prompt injecting Memory State if it exists
+        prompt = f"""You are Siny's WhatsApp Order Assistant.
+        Read this new text message from the customer: "{state.raw_message}"
+        
+        PRIOR KNOWLEDGE EXTRACTED: 
+        (If the customer already provided these earlier, do not extract them again. You only need to extract what the customer just said in the new message!)
+        - Known Fabric: {state.fabric_type or 'None'}
+        - Known Embroidery: {state.embroidery_type or 'None'}
+        - Known Stitches: {state.stitch_count or 'None'}
+        
+        Extract any NEW sewing/business details from this Whatsapp message and output the structured JSON.
+        If the combination of Known properties AND your New properties still leaves the main 3 fields incomplete, set is_missing_info=true and ask for specifically what is still missing!
+        """
+        
         # Generative AI reads the human text and extracts the core fields
-        extraction: OrderExtractionModel = self.extractor.invoke(
-            f"Extract the sewing and business details from this Whatsapp message:\n\n{state.raw_message}"
-        )
+        extraction: OrderExtractionModel = self.extractor.invoke(prompt)
         
-        state.fabric_type = extraction.fabric_type
-        state.embroidery_type = extraction.embroidery_type
-        state.stitch_count = extraction.stitch_count
-        state.requested_delivery_date = extraction.requested_delivery_date
-        
+        # Carefully hydrate state only if the LLM extracted something NEW
+        if extraction.fabric_type:
+            state.fabric_type = extraction.fabric_type
+        if extraction.embroidery_type:
+            state.embroidery_type = extraction.embroidery_type
+        if extraction.stitch_count:
+            state.stitch_count = extraction.stitch_count
+        if extraction.requested_delivery_date:
+            state.requested_delivery_date = extraction.requested_delivery_date
+            
         # Decision Logic: Does the bot have enough to confidently do math?
-        if extraction.is_missing_info or not state.stitch_count:
+        # A completed order strictly requires Fabric, Embroidery Type, and Stitch Count
+        if not state.fabric_type or not state.embroidery_type or not state.stitch_count:
             print(f"[{self.name}] Required parameters missing. Returning to WhatsApp.")
             state.is_missing_info = True
-            state.missing_fields_prompt = extraction.missing_fields_prompt or "Can you provide the exact stitch count and fabric type for this order?"
+            state.missing_fields_prompt = extraction.missing_fields_prompt or "Can you clarify the remaining missing details for this order?"
         else:
             state.is_missing_info = False
             state.current_agent = "ProductionScheduler"
             
-        print(f"[{self.name}] Extraction Output -> Stitches: {state.stitch_count}, Fabric: {state.fabric_type}")
+        print(f"[{self.name}] Aggregated Extraction Output -> Stitches: {state.stitch_count}, Fabric: {state.fabric_type}, Style: {state.embroidery_type}")
         
         return state
