@@ -79,43 +79,33 @@ class OrderCollectorAgent:
         
         # ✨ 0. Intercept explicit Database Mutation Overrides instantly! ✨
         if extraction.mark_as_invoiced and extraction.referenced_order_id:
-            print(f"[{self.name}] Intercepted Database Mutation Command for {extraction.referenced_order_id}")
             state.is_status_update = True
             state.new_invoice_status = "Invoiced"
             state.order_id = extraction.referenced_order_id
-            state.current_agent = "End" # Force Graph to skip Schedulers and Estimators!
             return state
             
         # ✨ 0.5 Intercept RAG History Explanations instantly! ✨
         if extraction.explain_reasoning and extraction.referenced_order_id:
-            print(f"[{self.name}] Intercepted Database Explanation Request for {extraction.referenced_order_id}")
             state.is_explanation_request = True
             state.order_id = extraction.referenced_order_id
-            state.current_agent = "End"
             return state
 
         # ✨ 0.6 Intercept Manual Field Override commands! ✨
         if extraction.is_field_override and extraction.referenced_order_id and extraction.override_field and extraction.override_value:
-            print(f"[{self.name}] Intercepted Field Override: '{extraction.override_field}' -> '{extraction.override_value}' on {extraction.referenced_order_id}")
             state.is_field_override = True
             state.order_id = extraction.referenced_order_id
             state.override_field = extraction.override_field
             state.override_value = extraction.override_value
-            state.current_agent = "End"
             return state
 
         # ✨ 0.7 Intercept Payment Query! ✨
         if extraction.is_payment_query:
-            print(f"[{self.name}] Intercepted Payment Query — routing to invoicing lookup.")
             state.is_payment_query = True
-            state.current_agent = "End"
             return state
             
         # ✨ 0.8 Intercept Secretary Query! ✨
         if extraction.is_secretary_query:
-            print(f"[{self.name}] Intercepted Secretary Query — routing to task summary.")
             state.is_secretary_query = True
-            state.current_agent = "SecretaryAgent"
             return state
         
         # Hydrate from Google Sheets if an Order ID was parsed!
@@ -173,7 +163,6 @@ class OrderCollectorAgent:
 
             # Passes all checks
             state.is_missing_info = False
-            state.current_agent = "ProductionScheduler"
 
         # Write Agent 1 Log to Column L (reasoning)
         agent_log = f"\n[Collector Agent]: Customer='{state.customer_name}', Stitches={state.stitch_count}, Fabric={state.fabric_type}, Style={state.embroidery_type}.\n"

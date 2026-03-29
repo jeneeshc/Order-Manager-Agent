@@ -73,5 +73,4 @@ class ProductionSchedulerAgent:
         )
         state.aggregated_reasoning += scheduler_log
         
-        state.current_agent = "EstimationAgent"
         return state

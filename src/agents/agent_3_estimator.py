@@ -50,6 +50,5 @@ class EstimationAgent:
         state.invoice_status = "Estimated"
         
         print(f"[{self.name}] Final Calculated Cost: Rs {state.total_cost_rs}")
-        state.current_agent = "SocialMediaAgent"
         
         return state

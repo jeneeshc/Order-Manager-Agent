@@ -44,6 +44,10 @@ class AgentState(BaseModel):
     is_duplicate_confirmed: bool = Field(default=False)
     is_secretary_query: bool = Field(default=False)
     
+    # supervisor-led orchestration fields
+    next_step: str = Field(default="supervisor")
+    worker_feedback: str = Field(default="")
+    
     # Manual Field Override state
     is_field_override: bool = Field(default=False)
     override_field: Optional[str] = None   # "delivery_date" | "cost" | "machine"

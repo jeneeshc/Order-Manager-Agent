@@ -25,6 +25,4 @@ class SocialMediaAgent:
         # In reality, trigger fal.ai video/image enhancement API right here
         # E.g. fal_client.run("fal-ai/fast-video", arguments={"image_url": ...})
         
-        state.current_agent = "InvoicingAgent"
-        
         return state

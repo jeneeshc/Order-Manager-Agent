@@ -1,68 +1,71 @@
 from langgraph.graph import StateGraph, END
 from src.agents.state import AgentState
+from dotenv import load_dotenv
+load_dotenv()
 
+from src.agents.agent_0_supervisor import SupervisorAgent
 from src.agents.agent_1_collector import OrderCollectorAgent
 from src.agents.agent_2_scheduler import ProductionSchedulerAgent
 from src.agents.agent_3_estimator import EstimationAgent
 from src.agents.agent_4_social_media import SocialMediaAgent
 from src.agents.agent_5_invoicing import InvoicingAgent
+from src.agents.agent_6_secretary import SecretaryAgent
 
-# Step 1: Initialize Agent Wrappers
+# Step 1: Initialize Agents
+supervisor = SupervisorAgent()
 collector = OrderCollectorAgent()
 scheduler = ProductionSchedulerAgent()
 estimator = EstimationAgent()
 social_media = SocialMediaAgent()
 invoicing = InvoicingAgent()
+secretary = SecretaryAgent()
 
-# Step 2: Define the mapping nodes
-def call_collector(state: AgentState) -> AgentState:
-    return collector.process(state)
-
-def call_scheduler(state: AgentState) -> AgentState:
-    return scheduler.process(state)
-
-def call_estimator(state: AgentState) -> AgentState:
-    return estimator.process(state)
-
-# Step 3: Define Routing Logic between nodes
-def route_after_collector(state: AgentState) -> str:
-    # If information is missing during collection (Siny didn't use MCP form fully)
-    if state.is_missing_info:
-        return "ask_user" # Pauses/Breaks flow to wait for Whatsapp Input
-    return "scheduler"    # Proceeds to next node automatically
-
-# Step 4: Build the Graph Architecture
-workflow = StateGraph(AgentState)
+# Step 2: Define the Graph
+builder = StateGraph(AgentState)
 
 # Add Nodes
-workflow.add_node("collector", call_collector)
-workflow.add_node("scheduler", call_scheduler)
-workflow.add_node("estimator", call_estimator)
-workflow.add_node("social", social_media.process)
-workflow.add_node("invoice", invoicing.process)
+builder.add_node("supervisor", supervisor.process)
+builder.add_node("collector", collector.process)
+builder.add_node("scheduler", scheduler.process)
+builder.add_node("estimator", estimator.process)
+builder.add_node("social", social_media.process)
+builder.add_node("invoice", invoicing.process)
+builder.add_node("secretary", secretary.process)
 
-# Add Edges (Linear Cascading flow based on our architectural diagram)
-workflow.set_entry_point("collector")
+# Step 3: Define edges
+builder.set_entry_point("supervisor")
 
-# Optional: Add condition routing
-workflow.add_conditional_edges("collector", route_after_collector, {
-    "ask_user": END,
-    "scheduler": "scheduler"
-})
+# The Supervisor decides who goes next
+builder.add_conditional_edges(
+    "supervisor",
+    lambda state: state.next_step,
+    {
+        "collector": "collector",
+        "scheduler": "scheduler",
+        "estimator": "estimator",
+        "social": "social",
+        "invoice": "invoice",
+        "secretary": "secretary",
+        "END": END
+    }
+)
 
-workflow.add_edge("scheduler", "estimator")
-workflow.add_edge("estimator", "social")
-workflow.add_edge("social", "invoice")
-workflow.add_edge("invoice", END)
+# Every worker returns to the supervisor to check for next steps
+builder.add_edge("collector", "supervisor")
+builder.add_edge("scheduler", "supervisor")
+builder.add_edge("estimator", "supervisor")
+builder.add_edge("social", "supervisor")
+builder.add_edge("invoice", "supervisor")
+builder.add_edge("secretary", "supervisor")
 
-# Compile Graph
-cjs_bot = workflow.compile()
+# Compile
+cjs_bot = builder.compile()
 
-# Test runner block
 if __name__ == "__main__":
-    initial_state = AgentState(raw_message="Hi Siny, new design order: 15200 stitches on Cotton padding. Need it by Friday.")
-    
-    print("--- STARTING CASCADING GRAPH ---")
-    final_state = cjs_bot.invoke(initial_state)
-    print("--- FINAL COMPILED RUN STATE ---")
-    print(final_state.model_dump_json(indent=2))
+    # Test Mixed Intent
+    test_state = AgentState(raw_message="Hi Siny, update order CJS-12345 to 8000 stitches. Also, what are my tasks for today?")
+    print("--- STARTING SUPERVISOR GRAPH ---")
+    final_output = cjs_bot.invoke(test_state)
+    print("--- FINAL OUTPUT ---")
+    print(final_output.get("aggregated_reasoning"))
+    print(f"Final Step: {final_output.get('next_step')}")
