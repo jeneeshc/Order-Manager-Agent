@@ -29,3 +29,38 @@ class WhatsAppService:
         except Exception as e:
             print(f"[WhatsApp] Failed to send message: {e}")
             return False
+
+    def download_media(self, media_id: str):
+        """
+        Resolves and downloads a WhatsApp media file (e.g. voice note) by its media_id.
+        Returns (bytes, mime_type) tuple, or (None, None) on failure.
+
+        Step 1: GET /{media_id} → returns a JSON with a 'url' field
+        Step 2: GET that url → returns raw audio bytes
+        """
+        try:
+            headers = {"Authorization": f"Bearer {self.token}"}
+            
+            # Step 1: Resolve media URL
+            meta_url = f"https://graph.facebook.com/v22.0/{media_id}"
+            meta_resp = requests.get(meta_url, headers=headers)
+            meta_resp.raise_for_status()
+            media_info = meta_resp.json()
+            
+            download_url = media_info.get("url")
+            mime_type = media_info.get("mime_type", "audio/ogg")
+            
+            if not download_url:
+                print(f"[WhatsApp] No download URL returned for media_id {media_id}")
+                return None, None
+
+            # Step 2: Download the actual audio bytes
+            audio_resp = requests.get(download_url, headers=headers)
+            audio_resp.raise_for_status()
+            
+            print(f"[WhatsApp] Downloaded {len(audio_resp.content)} bytes of audio ({mime_type})")
+            return audio_resp.content, mime_type
+
+        except Exception as e:
+            print(f"[WhatsApp] Media download failed for {media_id}: {e}")
+            return None, None
