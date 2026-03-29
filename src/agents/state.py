@@ -20,6 +20,7 @@ class AgentState(BaseModel):
     # Agent 2 updates these: Scheduling
     estimated_completion_date: Optional[str] = None
     machine_assigned: Optional[str] = None  # Ricoma or Aakruthi
+    scheduling_reasoning: Optional[str] = None
     
     # Agent 3 updates these: Costing
     total_cost_rs: Optional[float] = None
