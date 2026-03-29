@@ -35,19 +35,20 @@ class GoogleSheetsService:
         # Generate a unique tracking ID
         order_id = f"CJS-{str(uuid.uuid4())[:6].upper()}"
         
-        # We assume Sheet1 has standardized headers
+        # New column order (A-O) matching workflow progression
         values = [[
-            datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-            order_id,
-            state.sender_id,
-            state.fabric_type or "Unknown",
-            state.embroidery_type or "Unknown",
-            state.stitch_count or 0,
-            state.machine_assigned or "Pending",
-            state.estimated_completion_date or "Unknown",
-            f"Rs {state.total_cost_rs or 0}",
-            state.invoice_status or "Estimated",
-            state.aggregated_reasoning or "No logic recorded"
+            datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),  # A: Order Date
+            order_id,                                               # B: Order ID
+            state.customer_name or "Unknown",                      # C: Customer Name
+            state.sender_id,                                        # D: Phone
+            state.fabric_type or "Unknown",                        # E: Material
+            state.embroidery_type or "Unknown",                    # F: Embroidery Type
+            state.stitch_count or 0,                               # G: Stitch Count
+            state.machine_assigned or "Pending",                   # H: Machine
+            state.estimated_completion_date or "Unknown",          # I: Estimated Delivery Date
+            f"Rs {state.total_cost_rs or 0}",                      # J: Estimated Cost
+            state.invoice_status or "Estimated",                   # K: Payment Status
+            state.aggregated_reasoning or "No logic recorded"      # L: Reasoning
         ]]
         
         body = {'values': values}
@@ -85,15 +86,17 @@ class GoogleSheetsService:
                 if len(row) > 1 and row[1] == order_id:
                     print(f"[SheetsAPI] Found historical order: {order_id}")
                     return {
-                        "date": row[0] if len(row) > 0 else None,
-                        "fabric_type": row[3] if len(row) > 3 else None,
-                        "embroidery_type": row[4] if len(row) > 4 else None,
-                        "stitch_count": int(row[5]) if len(row) > 5 and str(row[5]).isdigit() else None,
-                        "machine_assigned": row[6] if len(row) > 6 else None,
-                        "completion_date": row[7] if len(row) > 7 else None,
-                        "cost": row[8] if len(row) > 8 else None,
-                        "status": row[9] if len(row) > 9 else None,
-                        "reasoning": row[10] if len(row) > 10 else "No historical agent reasoning log found natively in Column K."
+                        "date":             row[0]  if len(row) > 0  else None,
+                        "customer_name":    row[2]  if len(row) > 2  else None,
+                        "phone":            row[3]  if len(row) > 3  else None,
+                        "fabric_type":      row[4]  if len(row) > 4  else None,
+                        "embroidery_type":  row[5]  if len(row) > 5  else None,
+                        "stitch_count":     int(row[6]) if len(row) > 6 and str(row[6]).isdigit() else None,
+                        "machine_assigned": row[7]  if len(row) > 7  else None,
+                        "completion_date":  row[8]  if len(row) > 8  else None,
+                        "cost":             row[9]  if len(row) > 9  else None,
+                        "status":           row[10] if len(row) > 10 else None,
+                        "reasoning":        row[11] if len(row) > 11 else "No historical agent reasoning log found in Column L."
                     }
             print(f"[SheetsAPI] Order {order_id} not found in database.")
             return None
@@ -116,11 +119,11 @@ class GoogleSheetsService:
             
             for row in rows:
                 if len(row) > 7:
-                    machine = str(row[6]).strip()
-                    end_str = str(row[7]).strip()
+                    machine = str(row[7]).strip()   # H: Machine
+                    end_str = str(row[8]).strip()   # I: Estimated Delivery Date
+                    status  = str(row[10]).strip().lower() if len(row) > 10 else ""  # K: Payment Status
                     
-                    # Ignore completed orders
-                    if len(row) > 9 and "completed" in str(row[9]).lower(): continue
+                    if "completed" in status or "invoiced" in status: continue
                     
                     if machine in availability and end_str:
                         try:
@@ -235,11 +238,11 @@ class GoogleSheetsService:
                 print(f"[SheetsAPI] Could not mutate status: {order_id} strictly missing from database.")
                 return False
                 
-            # Step 2: Push the new Status explicitly forcing Column J
+            # Step 2: Push the new Status to col K (index 11, 1-based)
             body = {'values': [[new_status]]}
             self.service.spreadsheets().values().update(
                 spreadsheetId=self.spreadsheet_id,
-                range=f"J{target_row_num}",
+                range=f"K{target_row_num}",
                 valueInputOption="USER_ENTERED",
                 body=body
             ).execute()
@@ -265,9 +268,9 @@ class GoogleSheetsService:
         if not self.service or not order_id: return False
 
         FIELD_MAP = {
-            "delivery_date": "L",
-            "cost": "M",
-            "machine": "N",
+            "delivery_date": "M",   # Col M: Override Delivery Date
+            "cost": "N",            # Col N: Override Cost
+            "machine": "O",         # Col O: Override Machine
         }
         
         target_col = FIELD_MAP.get(field.lower().replace(" ", "_"))
@@ -291,16 +294,16 @@ class GoogleSheetsService:
                 print(f"[SheetsAPI] Override failed: {order_id} not found.")
                 return False
 
-            # Step 2: Read existing Column K reasoning so we can append, not overwrite
+            # Step 2: Read existing Col L (reasoning) to append, not overwrite
             k_result = self.service.spreadsheets().values().get(
-                spreadsheetId=self.spreadsheet_id, range=f"K{target_row}"
+                spreadsheetId=self.spreadsheet_id, range=f"L{target_row}"
             ).execute()
             existing_k = ""
             k_vals = k_result.get('values', [])
             if k_vals and k_vals[0]:
                 existing_k = k_vals[0][0]
 
-            # Step 3: Write override value to correct column (L/M/N)
+            # Step 3: Write override value to correct column (M/N/O)
             self.service.spreadsheets().values().update(
                 spreadsheetId=self.spreadsheet_id,
                 range=f"{target_col}{target_row}",
@@ -308,13 +311,13 @@ class GoogleSheetsService:
                 body={'values': [[new_value]]}
             ).execute()
 
-            # Step 4: Append override audit note to Column K
+            # Step 4: Append override audit note to Col L (reasoning)
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
             override_note = f"\n[Override - {timestamp}]: Siny manually changed '{field}' to '{new_value}'."
             updated_k = existing_k + override_note
             self.service.spreadsheets().values().update(
                 spreadsheetId=self.spreadsheet_id,
-                range=f"K{target_row}",
+                range=f"L{target_row}",
                 valueInputOption="USER_ENTERED",
                 body={'values': [[updated_k]]}
             ).execute()
@@ -325,3 +328,47 @@ class GoogleSheetsService:
         except Exception as e:
             print(f"[SheetsAPI] Override field update failed: {e}")
             return False
+
+    def get_pending_payments(self) -> dict:
+        """
+        Scans all orders and returns those with Payment Status == 'Completed',
+        grouped by Customer Name. Returns a dict: {customer_name: [order_dict, ...]}
+        """
+        if not self.service: return {}
+        
+        try:
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, range="A:O"
+            ).execute()
+            rows = result.get('values', [])
+            pending = {}  # {customer_name: [orders]}
+            
+            for i, row in enumerate(rows):
+                if i == 0: continue  # skip header
+                if len(row) < 11: continue
+                
+                status = str(row[10]).strip().lower()  # K: Payment Status
+                if status != "completed": continue
+                
+                order = {
+                    "order_id":        row[1]  if len(row) > 1  else "Unknown",
+                    "customer_name":   row[2]  if len(row) > 2  else "Unknown",
+                    "phone":           row[3]  if len(row) > 3  else "",
+                    "embroidery_type": row[5]  if len(row) > 5  else "Unknown",
+                    "fabric_type":     row[4]  if len(row) > 4  else "Unknown",
+                    "cost":            row[9]  if len(row) > 9  else "Rs 0",
+                    "delivery_date":   row[8]  if len(row) > 8  else "Unknown",
+                }
+                
+                customer = order["customer_name"]
+                if customer not in pending:
+                    pending[customer] = []
+                pending[customer].append(order)
+            
+            total_count = sum(len(v) for v in pending.values())
+            print(f"[SheetsAPI] Found {total_count} completed-unpaid orders across {len(pending)} customers.")
+            return pending
+            
+        except Exception as e:
+            print(f"[SheetsAPI] get_pending_payments failed: {e}")
+            return {}

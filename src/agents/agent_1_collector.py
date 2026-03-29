@@ -7,6 +7,7 @@ from src.services.sheets import GoogleSheetsService
 
 class OrderExtractionModel(BaseModel):
     """Rigid JSON schema for the LLM to fill out based on Siny's WhatsApp text."""
+    customer_name: Optional[str] = Field(description="The name of the customer placing the order. Leave null if not mentioned.")
     fabric_type: Optional[str] = Field(description="The material/fabric mentioned. Leave null if not stated.")
     embroidery_type: Optional[str] = Field(description="The style or type of embroidery (e.g. Logo, Floral, Pattern). Leave null if not stated.")
     stitch_count: Optional[int] = Field(description="The exact numeric total of stitches requested. Leave null if not stated.")
@@ -16,9 +17,10 @@ class OrderExtractionModel(BaseModel):
     explain_reasoning: bool = Field(description="True ONLY if Siny explicitly asks to explain the reasoning, logic, or math behind a previously generated Order ID.")
     is_field_override: bool = Field(description="True ONLY if the user wants to manually change/override a specific field (delivery date, cost, or machine) on an existing order.")
     override_field: Optional[str] = Field(description="If is_field_override is True, which field to change: 'delivery_date', 'cost', or 'machine'. Leave null otherwise.")
-    override_value: Optional[str] = Field(description="If is_field_override is True, the new value Siny wants to set (e.g. '2026-04-10', '450', 'Aakruthi'). Leave null otherwise.")
-    is_missing_info: bool = Field(description="True if ANY of fabric_type, embroidery_type, or stitch_count are missing and she DID NOT provide an order ID and mark_as_invoiced is False.")
-    missing_fields_prompt: Optional[str] = Field(description="If is_missing_info is True, generate a friendly short text asking Siny for the missing details.")
+    override_value: Optional[str] = Field(description="If is_field_override is True, the new value Siny wants to set. Leave null otherwise.")
+    is_payment_query: bool = Field(description="True ONLY if Siny is asking about pending payments, unpaid orders, or items awaiting payment.")
+    is_missing_info: bool = Field(description="True if ANY of fabric_type, embroidery_type, or stitch_count are missing AND she DID NOT provide an order ID AND mark_as_invoiced, is_payment_query, explain_reasoning, and is_field_override are all False.")
+    missing_fields_prompt: Optional[str] = Field(description="If is_missing_info is True, generate a friendly short text asking Siny for the missing details including customer name if not provided.")
 
 class OrderCollectorAgent:
     def __init__(self):
@@ -80,6 +82,13 @@ class OrderCollectorAgent:
             state.override_value = extraction.override_value
             state.current_agent = "End"
             return state
+
+        # ✨ 0.7 Intercept Payment Query! ✨
+        if extraction.is_payment_query:
+            print(f"[{self.name}] Intercepted Payment Query — routing to invoicing lookup.")
+            state.is_payment_query = True
+            state.current_agent = "End"
+            return state
         
         # Hydrate from Google Sheets if an Order ID was parsed!
         if extraction.referenced_order_id:
@@ -95,36 +104,35 @@ class OrderCollectorAgent:
             else:
                 print(f"[{self.name}] DB order not found. Falling back to chat extraction exclusively.")
         
+        # Hydrate customer_name from extraction
+        if extraction.customer_name:
+            state.customer_name = extraction.customer_name
+
         # Safely hydrate state if AI explicitly extracted something NEW
         if extraction.fabric_type and not extraction.referenced_order_id:
             state.fabric_type = extraction.fabric_type
         elif extraction.fabric_type and extraction.referenced_order_id:
-            pass # Already handled by override logic Above!
+            pass
         if extraction.embroidery_type and not extraction.referenced_order_id:
             state.embroidery_type = extraction.embroidery_type
         if extraction.stitch_count and not extraction.referenced_order_id:
             state.stitch_count = extraction.stitch_count
-            
+
         if extraction.requested_delivery_date:
             state.requested_delivery_date = extraction.requested_delivery_date
-            
-        # Decision Logic: Does the bot have enough to confidently do math?
-        # A completed order strictly requires Fabric, Embroidery Type, and Stitch Count
+
+        # Decision Logic: requires Fabric, Embroidery Type, Stitch Count, and Customer Name
         if not state.fabric_type or not state.embroidery_type or not state.stitch_count:
             print(f"[{self.name}] Required parameters missing. Returning to WhatsApp.")
             state.is_missing_info = True
-            state.missing_fields_prompt = extraction.missing_fields_prompt or "Can you clarify the remaining missing details for this order?"
+            state.missing_fields_prompt = extraction.missing_fields_prompt or "Could you please share the fabric type, embroidery style, stitch count, and your name?"
         else:
             state.is_missing_info = False
             state.current_agent = "ProductionScheduler"
-            
-        # Write Agent 1 Log to Column K!
-        agent_log = f"\n[Collector Agent]: Extracted Native Parameters -> Stitches: {state.stitch_count}, Fabric: {state.fabric_type}, Style: {state.embroidery_type}.\n"
-        if not hasattr(state, "aggregated_reasoning") or state.aggregated_reasoning is None:
-             state.aggregated_reasoning = agent_log
-        else:
-             state.aggregated_reasoning += agent_log
-            
-        print(f"[{self.name}] Aggregated Extraction Output -> Stitches: {state.stitch_count}, Fabric: {state.fabric_type}, Style: {state.embroidery_type}")
-        
+
+        # Write Agent 1 Log to Column L (reasoning)
+        agent_log = f"\n[Collector Agent]: Customer='{state.customer_name}', Stitches={state.stitch_count}, Fabric={state.fabric_type}, Style={state.embroidery_type}.\n"
+        state.aggregated_reasoning = (state.aggregated_reasoning or "") + agent_log
+
+        print(f"[{self.name}] Aggregated Extraction Output -> Customer: {state.customer_name}, Stitches: {state.stitch_count}, Fabric: {state.fabric_type}, Style: {state.embroidery_type}")
         return state

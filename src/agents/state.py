@@ -11,6 +11,7 @@ class AgentState(BaseModel):
     raw_message: str = Field(default="")
     
     # Agent 1 updates these: Order context
+    customer_name: Optional[str] = None
     fabric_type: Optional[str] = None
     embroidery_type: Optional[str] = None
     stitch_count: Optional[int] = None
@@ -38,6 +39,7 @@ class AgentState(BaseModel):
     is_status_update: bool = Field(default=False)
     new_invoice_status: Optional[str] = None
     is_explanation_request: bool = Field(default=False)
+    is_payment_query: bool = Field(default=False)
     
     # Manual Field Override state
     is_field_override: bool = Field(default=False)

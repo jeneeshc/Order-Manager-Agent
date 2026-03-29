@@ -161,9 +161,9 @@ async def receive_whatsapp_message(request: Request):
                             success = db_service.update_order_field(oid, field, value)
                             
                             FIELD_LABELS = {
-                                "delivery_date": "Delivery Date (Col L)",
-                                "cost": "Cost (Col M)",
-                                "machine": "Machine (Col N)",
+                                "delivery_date": "Override Delivery Date (Col M)",
+                                "cost": "Override Cost (Col N)",
+                                "machine": "Override Machine (Col O)",
                             }
                             label = FIELD_LABELS.get(field, field)
                             
@@ -176,6 +176,42 @@ async def receive_whatsapp_message(request: Request):
                             else:
                                 msg = f"❌ Override failed: Could not find order {oid} in the database, or the field '{field}' is not recognised."
                                 
+                            whatsapp_service.send_text_message(sender_phone, msg)
+                            return {"status": "received"}
+                        
+                        # ✨ Intercept Payment Queries (Completed but unpaid orders)! ✨
+                        if final_state_dict.get("is_payment_query"):
+                            memory_service.clear_state(sender_phone)
+                            pending = db_service.get_pending_payments()
+                            
+                            if not pending:
+                                msg = "✅ Great news! There are currently no orders with 'Completed' status pending payment."
+                            else:
+                                lines = ["💳 *Pending Payments Summary*\n────────────────────────────"]
+                                grand_total = 0.0
+                                
+                                for customer, orders in pending.items():
+                                    phone = orders[0].get("phone", "")
+                                    lines.append(f"\n👤 *{customer}* ({phone})")
+                                    subtotal = 0.0
+                                    for o in orders:
+                                        cost_str = o.get("cost", "Rs 0")
+                                        # Parse numeric value from 'Rs 160.0'
+                                        try:
+                                            cost_val = float(cost_str.replace("Rs", "").strip())
+                                        except:
+                                            cost_val = 0.0
+                                        subtotal += cost_val
+                                        lines.append(
+                                            f"  • {o['order_id']} — {o['embroidery_type']} on {o['fabric_type']} — {cost_str} (Due: {o['delivery_date']})"
+                                        )
+                                    lines.append(f"  *Subtotal: Rs {subtotal:.1f}*")
+                                    grand_total += subtotal
+                                
+                                lines.append(f"\n────────────────────────────")
+                                lines.append(f"💰 *Grand Total Pending: Rs {grand_total:.1f}*")
+                                msg = "\n".join(lines)
+                            
                             whatsapp_service.send_text_message(sender_phone, msg)
                             return {"status": "received"}
                         
