@@ -13,9 +13,13 @@ from langchain_core.messages import HumanMessage
 class AudioTranscriptionService:
     def __init__(self):
         self.name = "Audio Transcription Service"
+        gemini_key = os.environ.get("GEMINI_API_KEY")
+        
+        # LangChain prefers GOOGLE_API_KEY over GEMINI_API_KEY when both exist.
+        # For the audio service, force usage of the correct Gemini key explicitly.
         self.llm = ChatGoogleGenerativeAI(
             model="gemini-flash-latest",
-            google_api_key=os.environ.get("GEMINI_API_KEY"),
+            google_api_key=gemini_key,
             temperature=0
         )
 
@@ -61,7 +65,17 @@ class AudioTranscriptionService:
             ])
 
             response = self.llm.invoke([message])
-            full_response = response.content.strip()
+            
+            # LangChain multimodal responses return content as a list of blocks
+            # Each block is a dict with "type" and "text". We join all text blocks.
+            if isinstance(response.content, list):
+                full_response = " ".join(
+                    block.get("text", "") if isinstance(block, dict) else str(block)
+                    for block in response.content
+                ).strip()
+            else:
+                full_response = str(response.content).strip()
+                
             print(f"[{self.name}] Raw Gemini response:\n{full_response}")
 
             order_details = self._extract_section(full_response, "ORDER DETAILS:")
