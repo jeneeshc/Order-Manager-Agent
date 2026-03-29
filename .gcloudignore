@@ -1,0 +1,10 @@
+.env
+credentials.json
+__pycache__/
+*.pyc
+venv/
+.venv/
+test_sheets.py
+test_agent.py
+send_test.py
+.git/
