@@ -3,7 +3,6 @@ uvicorn
 pytz
 google-auth
 google-api-python-client
-google-generativeai
 langchain
 langchain-google-genai
 langchain-google-vertexai

@@ -1,93 +1,87 @@
 """
 AudioTranscriptionService
-Uses Gemini 1.5 Flash's native multimodal audio capabilities to transcribe
-Malayalam voice messages and extract embroidery order details from them.
-No additional API keys required beyond the existing GEMINI_API_KEY.
+Uses LangChain's ChatGoogleGenerativeAI (already installed) with multimodal
+input to transcribe Malayalam voice messages and extract order details.
+No additional packages required beyond what's already in requirements.txt.
 """
 import os
 import base64
-import google.generativeai as genai
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import HumanMessage
 
 
 class AudioTranscriptionService:
     def __init__(self):
         self.name = "Audio Transcription Service"
-        api_key = os.environ.get("GEMINI_API_KEY")
-        genai.configure(api_key=api_key)
-        # Use gemini-1.5-flash which supports inline audio input
-        self.model = genai.GenerativeModel("gemini-1.5-flash")
+        self.llm = ChatGoogleGenerativeAI(
+            model="gemini-1.5-flash-latest",
+            google_api_key=os.environ.get("GEMINI_API_KEY"),
+            temperature=0
+        )
 
-    def transcribe(self, audio_bytes: bytes, mime_type: str = "audio/ogg") -> str:
+    def transcribe(self, audio_bytes: bytes, mime_type: str = "audio/ogg") -> tuple:
         """
-        Sends audio bytes directly to Gemini for Malayalam transcription.
-        Returns a plain English description of what was said, ready for
-        the Collector Agent to parse.
+        Sends audio bytes to Gemini via LangChain multimodal input for Malayalam transcription.
+        Returns (order_details_text, full_transcript) tuple.
+        Returns ("", "") on failure.
 
         Args:
             audio_bytes: Raw audio content downloaded from WhatsApp
-            mime_type: MIME type of the audio (typically audio/ogg for WhatsApp voice notes)
-
-        Returns:
-            Transcribed and translated English text, or empty string on failure.
+            mime_type: MIME type (typically audio/ogg; codecs=opus for WhatsApp voice notes)
         """
-        print(f"[{self.name}] Sending {len(audio_bytes)} bytes of audio to Gemini for Malayalam transcription...")
+        print(f"[{self.name}] Sending {len(audio_bytes)} bytes ({mime_type}) to Gemini...")
+
+        # WhatsApp sends audio/ogg; codecs=opus — strip the codec suffix for Gemini
+        clean_mime = mime_type.split(";")[0].strip()
 
         try:
-            # Encode audio as base64 for inline submission to Gemini
             audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
 
-            prompt = (
+            prompt_text = (
                 "This is a voice message from a customer of CJS Designs, an embroidery business in Kerala, India. "
-                "The customer is speaking in Malayalam. "
+                "The customer may be speaking in Malayalam, English, or a mix of both. "
                 "Please do the following:\n"
-                "1. Transcribe the Malayalam audio accurately.\n"
-                "2. Translate it clearly into English.\n"
-                "3. Highlight any embroidery order details mentioned: "
-                "fabric/material type, embroidery style, stitch count, and requested delivery date.\n\n"
-                "Return your response in this exact format:\n"
-                "TRANSCRIPTION (Malayalam): <original text>\n"
+                "1. Transcribe the audio accurately.\n"
+                "2. Translate it clearly into English if it is in Malayalam.\n"
+                "3. Identify any embroidery order details mentioned: "
+                "fabric/material type, embroidery style or type, stitch count, and requested delivery date.\n\n"
+                "Respond in this exact format:\n"
+                "TRANSCRIPTION: <original text>\n"
                 "TRANSLATION (English): <translated text>\n"
-                "ORDER DETAILS: <plain English summary of order fields for the ordering system>"
+                "ORDER DETAILS: <plain English summary of order fields — fabric, embroidery type, stitch count, delivery date>"
             )
 
-            response = self.model.generate_content([
-                prompt,
+            message = HumanMessage(content=[
+                {"type": "text", "text": prompt_text},
                 {
-                    "inline_data": {
-                        "mime_type": mime_type,
-                        "data": audio_b64
-                    }
+                    "type": "media",
+                    "mime_type": clean_mime,
+                    "data": audio_b64,
                 }
             ])
 
-            full_response = response.text.strip()
-            print(f"[{self.name}] Gemini transcription raw response:\n{full_response}")
+            response = self.llm.invoke([message])
+            full_response = response.content.strip()
+            print(f"[{self.name}] Raw Gemini response:\n{full_response}")
 
-            # Extract only the ORDER DETAILS line to pass to the Collector Agent
-            # This is the actionable part of the response
-            order_details = self._extract_order_details(full_response)
-            print(f"[{self.name}] Extracted order details for pipeline: '{order_details}'")
-            return order_details, full_response  # Return both for WhatsApp echo
+            order_details = self._extract_section(full_response, "ORDER DETAILS:")
+            if not order_details:
+                order_details = self._extract_section(full_response, "TRANSLATION (ENGLISH):")
+            if not order_details:
+                order_details = full_response  # fallback: use entire response
+
+            print(f"[{self.name}] Extracted for pipeline: '{order_details}'")
+            return order_details, full_response
 
         except Exception as e:
             print(f"[{self.name}] Transcription failed: {e}")
             return "", ""
 
-    def _extract_order_details(self, gemini_response: str) -> str:
-        """
-        Pulls the ORDER DETAILS line out of Gemini's structured response.
-        Falls back to the full TRANSLATION if the format wasn't followed.
-        """
-        lines = gemini_response.splitlines()
-
-        for line in lines:
-            if line.strip().upper().startswith("ORDER DETAILS:"):
-                return line.split(":", 1)[1].strip()
-
-        # Fallback: return the TRANSLATION line
-        for line in lines:
-            if line.strip().upper().startswith("TRANSLATION (ENGLISH):"):
-                return line.split(":", 1)[1].strip()
-
-        # Last resort: return whole response
-        return gemini_response
+    def _extract_section(self, text: str, label: str) -> str:
+        """Extracts the value after a given label from a structured response."""
+        for line in text.splitlines():
+            if line.strip().upper().startswith(label.upper()):
+                parts = line.split(":", 1)
+                if len(parts) > 1:
+                    return parts[1].strip()
+        return ""
