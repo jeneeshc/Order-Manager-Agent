@@ -40,6 +40,14 @@ class SecretaryAgent:
         """
         
         response = self.llm.invoke(prompt)
+        
+        # Robustly extract text from Gemini's response blocks (handles lists/dicts)
+        if isinstance(response.content, list):
+            return " ".join(
+                block.get("text", "") if isinstance(block, dict) else str(block)
+                for block in response.content
+            ).strip()
+            
         return str(response.content).strip()
 
     def process(self, state: AgentState) -> AgentState:
