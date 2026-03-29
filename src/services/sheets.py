@@ -46,7 +46,8 @@ class GoogleSheetsService:
             state.machine_assigned or "Pending",
             state.estimated_completion_date or "Unknown",
             f"Rs {state.total_cost_rs or 0}",
-            state.invoice_status
+            state.invoice_status,
+            state.scheduling_reasoning or "No logic recorded"
         ]]
         
         body = {'values': values}
@@ -54,7 +55,7 @@ class GoogleSheetsService:
         try:
             result = self.service.spreadsheets().values().append(
                 spreadsheetId=self.spreadsheet_id,
-                range="A:J",
+                range="A:K",
                 valueInputOption="USER_ENTERED",
                 body=body
             ).execute()
@@ -98,3 +99,66 @@ class GoogleSheetsService:
         except Exception as e:
             print(f"[SheetsAPI] Fetch failed: {e}")
             return None
+
+    def get_machine_availability(self) -> dict:
+        """
+        Calculates when 'Ricoma' and 'Aakruthi' physically become free by mathematically 
+        parsing all open, incomplete backlogged orders natively from the Google Sheet.
+        """
+        availability = { "Ricoma": datetime.datetime.now(), "Aakruthi": datetime.datetime.now() }
+        if not self.service: 
+            return availability
+            
+        try:
+            result = self.service.spreadsheets().values().get(spreadsheetId=self.spreadsheet_id, range="A:K").execute()
+            rows = result.get('values', [])
+            
+            for row in rows:
+                if len(row) > 7:
+                    machine = str(row[6]).strip()
+                    end_str = str(row[7]).strip()
+                    
+                    # Ignore completed orders
+                    if len(row) > 9 and "completed" in str(row[9]).lower(): continue
+                    
+                    if machine in availability and end_str:
+                        try:
+                            end_dt = datetime.datetime.strptime(end_str, "%Y-%m-%d")
+                            if end_dt > availability[machine]:
+                                availability[machine] = end_dt
+                        except ValueError:
+                            pass
+            return availability
+        except Exception as e:
+            print(f"[SheetsAPI] Warning: Failed to parse queues natively: {e}")
+            return availability
+
+    def get_holidays(self) -> list:
+        """
+        Reads explicitly marked off-days from the 'Holidays' tab in Siny's Google Sheet.
+        Expects Column A to contain dates formatted strictly as YYYY-MM-DD.
+        """
+        holidays = []
+        if not self.service: return holidays
+        
+        try:
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, 
+                range="Holidays!A:A"
+            ).execute()
+            
+            rows = result.get('values', [])
+            for row in rows:
+                if row:
+                    try:
+                        dt = datetime.datetime.strptime(row[0].strip(), "%Y-%m-%d").date()
+                        holidays.append(dt)
+                    except ValueError:
+                        pass
+                        
+            print(f"[SheetsAPI] Extracted {len(holidays)} explicit holidays from 'Holidays' tab.")
+            return holidays
+            
+        except Exception as e:
+            print(f"[SheetsAPI] Warning: 'Holidays' tab not found or unreadable: {e}")
+            return holidays
