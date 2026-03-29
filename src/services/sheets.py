@@ -65,3 +65,36 @@ class GoogleSheetsService:
         except Exception as e:
             print(f"[SheetsAPI] Append failed: {e}")
             return None
+
+    def get_order(self, order_id: str) -> dict:
+        """
+        Scans Sheet1 for a specific Order ID and securely returns 
+        the historical properties associated with it.
+        """
+        if not self.service or not order_id: return None
+        
+        try:
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id,
+                range="Sheet1!A:J"
+            ).execute()
+            
+            rows = result.get('values', [])
+            for row in rows:
+                if len(row) > 1 and row[1] == order_id:
+                    print(f"[SheetsAPI] Found historical order: {order_id}")
+                    return {
+                        "date": row[0] if len(row) > 0 else None,
+                        "fabric_type": row[3] if len(row) > 3 else None,
+                        "embroidery_type": row[4] if len(row) > 4 else None,
+                        "stitch_count": int(row[5]) if len(row) > 5 and str(row[5]).isdigit() else None,
+                        "machine_assigned": row[6] if len(row) > 6 else None,
+                        "completion_date": row[7] if len(row) > 7 else None,
+                        "cost": row[8] if len(row) > 8 else None,
+                        "status": row[9] if len(row) > 9 else None
+                    }
+            print(f"[SheetsAPI] Order {order_id} not found in database.")
+            return None
+        except Exception as e:
+            print(f"[SheetsAPI] Fetch failed: {e}")
+            return None

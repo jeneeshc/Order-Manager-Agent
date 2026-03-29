@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from src.agents.state import AgentState
 from langchain_google_genai import ChatGoogleGenerativeAI
+from src.services.sheets import GoogleSheetsService
 
 class OrderExtractionModel(BaseModel):
     """Rigid JSON schema for the LLM to fill out based on Siny's WhatsApp text."""
@@ -10,7 +11,8 @@ class OrderExtractionModel(BaseModel):
     embroidery_type: Optional[str] = Field(description="The style or type of embroidery (e.g. Logo, Floral, Pattern). Leave null if not stated.")
     stitch_count: Optional[int] = Field(description="The exact numeric total of stitches requested. Leave null if not stated.")
     requested_delivery_date: Optional[str] = Field(description="The day or date requested for delivery. Leave null if not stated.")
-    is_missing_info: bool = Field(description="True if ANY of fabric_type, embroidery_type, or stitch_count are missing.")
+    referenced_order_id: Optional[str] = Field(description="If Siny explicitly types a previous Order ID (like CJS-12345), exactly extract it here. Leave null if she does not mention one.")
+    is_missing_info: bool = Field(description="True if ANY of fabric_type, embroidery_type, or stitch_count are missing and she DID NOT provide an order ID.")
     missing_fields_prompt: Optional[str] = Field(description="If is_missing_info is True, generate a friendly short text asking Siny for the missing details.")
 
 class OrderCollectorAgent:
@@ -47,13 +49,30 @@ class OrderCollectorAgent:
         # Generative AI reads the human text and extracts the core fields
         extraction: OrderExtractionModel = self.extractor.invoke(prompt)
         
-        # Carefully hydrate state only if the LLM extracted something NEW
-        if extraction.fabric_type:
+        # Hydrate from Google Sheets if an Order ID was parsed!
+        if extraction.referenced_order_id:
+            print(f"[{self.name}] Connecting to Database to hydrate context for {extraction.referenced_order_id}...")
+            db = GoogleSheetsService()
+            historical_db_order = db.get_order(extraction.referenced_order_id)
+            
+            if historical_db_order:
+                # Inject DB parameters unless the AI successfully extracted a NEW override from the chat!
+                state.fabric_type = extraction.fabric_type or historical_db_order.get("fabric_type")
+                state.embroidery_type = extraction.embroidery_type or historical_db_order.get("embroidery_type")
+                state.stitch_count = extraction.stitch_count or historical_db_order.get("stitch_count")
+            else:
+                print(f"[{self.name}] DB order not found. Falling back to chat extraction exclusively.")
+        
+        # Safely hydrate state if AI explicitly extracted something NEW
+        if extraction.fabric_type and not extraction.referenced_order_id:
             state.fabric_type = extraction.fabric_type
-        if extraction.embroidery_type:
+        elif extraction.fabric_type and extraction.referenced_order_id:
+            pass # Already handled by override logic Above!
+        if extraction.embroidery_type and not extraction.referenced_order_id:
             state.embroidery_type = extraction.embroidery_type
-        if extraction.stitch_count:
+        if extraction.stitch_count and not extraction.referenced_order_id:
             state.stitch_count = extraction.stitch_count
+            
         if extraction.requested_delivery_date:
             state.requested_delivery_date = extraction.requested_delivery_date
             
