@@ -54,12 +54,12 @@ class SupervisorAgent:
         - 'invoice': Handles payment status, pending dues, and finalizes orders.
         
         DECISION RULES:
-        1. CRITICAL: If 'Missing Info? True' (is_missing_info), you MUST route to 'collector' to gather the missing details. If you have already tried 'collector' and 'is_missing_info' remains True, route to 'END' to ask Boss for clarification.
+        1. CRITICAL: If 'Missing Info? True' (is_missing_info), you MUST route to 'END' immediately. This allows the system to send the missing information prompt to Siny. Do NOT route to collector again if information is already flagged as missing.
         2. If 'Missing Info? False' or this is a fresh user message, ALWAYS prioritize routing to 'collector' first if an order is involved.
-        3. If Boss asks for a daily summary, work schedule, or "what to do today", route to 'secretary'.
+        3. If Siny asks for a daily summary, work schedule, or "what to do today", route to 'secretary'.
         4. Proceed to 'scheduler' and 'estimator' only after 'collector' confirms ALL required info (is_missing_info=False).
         5. If all business logic (scheduling, cost, invoicing) is complete or it's a simple query already answered, route to 'END'.
-        6. CRITICAL: If 'Final Reply Ready? Yes', you MUST route to 'END' immediately to deliver the message to Boss.
+        6. CRITICAL: If 'Final Reply Ready? Yes', you MUST route to 'END' immediately to deliver the message to Siny.
         """
         
         decision = self.router.invoke(prompt)

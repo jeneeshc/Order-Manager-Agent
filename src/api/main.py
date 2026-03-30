@@ -33,6 +33,14 @@ memory_service = MemoryService()
 db_service = GoogleSheetsService()
 secretary_agent = SecretaryAgent()
 
+def normalize_phone(phone: str) -> str:
+    """Removes all non-digit characters from a phone number for robust comparison."""
+    if not phone:
+        return ""
+    return "".join(filter(str.isdigit, str(phone)))
+
+normalized_admin_phone = normalize_phone(ADMIN_PHONE_NUMBER)
+
 # Scheduler (fires at 6:00 AM IST daily)
 scheduler = AsyncIOScheduler(timezone=IST)
 
@@ -115,7 +123,7 @@ async def handle_webhook(request: Request):
                         print(f"[RECV] Message from {sender_phone}: {text_body}")
                         
                         # ✨ Immediate Acknowledgment to Siny to manage perceived latency ✨
-                        if sender_phone == ADMIN_PHONE_NUMBER:
+                        if normalize_phone(sender_phone) == normalized_admin_phone:
                             whatsapp_service.send_text_message(sender_phone, "Working on your request, Boss... 🔄")
                         
                         try:
@@ -165,7 +173,7 @@ async def handle_webhook(request: Request):
                             print(error_trace)
                             
                             # NOTIFY the user about the failure (Helpful for debugging)
-                            if sender_phone == ADMIN_PHONE_NUMBER:
+                            if normalize_phone(sender_phone) == normalized_admin_phone:
                                  error_msg = f"⚠️ *Internal Error:* {str(e)}\n\nCheck logs for details."
                                  whatsapp_service.send_text_message(sender_phone, error_msg)
     
