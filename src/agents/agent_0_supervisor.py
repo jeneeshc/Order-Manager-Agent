@@ -28,10 +28,11 @@ class SupervisorAgent:
         3. If no further actions are needed, sets next_step="END".
         """
         prompt = f"""
-        You are the Head Supervisor for Boss's Embroidery Business (CJS Designs).
-        Your job is to coordinate different specialist agents to fulfill a customer's request.
+        You are the Head Supervisor for Siny's Embroidery Business (CJS Designs).
+        Your job is to coordinate different specialist agents to fulfill a request.
+        Addressing the user: Always use the salutation 'Boss' in your final response.
         
-        MESSAGE FROM BOSS: "{state.raw_message}"
+        MESSAGE: "{state.raw_message}"
         
         CURRENT STATE:
         - Customer: {state.customer_name or 'Unknown'}
@@ -42,6 +43,7 @@ class SupervisorAgent:
         - Missing Info? {state.is_missing_info}
         - Estimates Done? {state.total_cost_rs is not None}
         - Secretarial/Task Query? {state.is_secretary_query}
+        - Final Reply Ready? {'Yes' if state.final_reply else 'No'}
         
         WORKERS AVAILABLE:
         - 'collector': Specialized in extracting names, fabrics, stitches, and detecting intents. Use this if order info is missing or first contact.
@@ -57,12 +59,13 @@ class SupervisorAgent:
         3. If Boss asks for a daily summary, work schedule, or "what to do today", route to 'secretary'.
         4. Proceed to 'scheduler' and 'estimator' only after 'collector' confirms ALL required info (is_missing_info=False).
         5. If all business logic (scheduling, cost, invoicing) is complete or it's a simple query already answered, route to 'END'.
+        6. CRITICAL: If 'Final Reply Ready? Yes', you MUST route to 'END' immediately to deliver the message to Boss.
         """
         
         decision = self.router.invoke(prompt)
         print(f"[{self.name}] Router Decision: {decision.next_step} ({decision.reasoning})")
         
-        # If the task is finished, send the final response to Boss.
+        # If the task is finished, send the final response to Siny.
         if decision.next_step == "END":
             print(f"[{self.name}] Task complete. Preparing final response...")
 
@@ -76,8 +79,9 @@ class SupervisorAgent:
                 # Supervisor synthesizes ONE coherent message from all agents' reasoning.
                 print(f"[{self.name}] Synthesizing final reply from aggregated reasoning...")
                 final_prompt = f"""
-                You are Boss's Business Supervisor. The task is complete.
-                Based on the following aggregated work from your specialists, write a single final WhatsApp message to Boss.
+                You are Siny's Business Supervisor. The task is complete.
+                When addressing the user, always use the salutation 'Boss'.
+                Based on the following aggregated work from your specialists, write a single final WhatsApp message.
                 
                 WORK REASONING:
                 {state.aggregated_reasoning}

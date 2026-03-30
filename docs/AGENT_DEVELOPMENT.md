@@ -30,7 +30,7 @@ WhatsApp Message
 ## The `final_reply` Contract
 
 `AgentState.final_reply` is the single field that determines how the Supervisor sends the
-final WhatsApp message to Boss.
+final WhatsApp message to Siny.
 
 ### Rule
 

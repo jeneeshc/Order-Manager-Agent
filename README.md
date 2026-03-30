@@ -37,12 +37,12 @@
 
 ## 1. Business Context
 
-**CJS Designs** is a machine embroidery business operated by **Boss** (proprietor).
-Customers contact Boss via WhatsApp with order requests — fabric type, embroidery style,
-stitch count, and delivery expectations. Previously, Boss manually calculated costs,
+**CJS Designs** is a machine embroidery business operated by **Siny** (proprietor).
+Customers contact Siny via WhatsApp with order requests — fabric type, embroidery style,
+stitch count, and delivery expectations. Previously, Siny manually calculated costs,
 scheduled machine time, and tracked payments via spreadsheets.
 
-This system automates the entire lifecycle via AI agents that Boss controls entirely through
+This system automates the entire lifecycle via AI agents that Siny controls entirely through
 natural WhatsApp messages — no app, no portal, no training required.
 
 ### Business Constants
@@ -54,7 +54,7 @@ natural WhatsApp messages — no app, no portal, no training required.
 | Working hours/day | 6 hours |
 | Base billing rate | Rs 8 per 1,000 stitches |
 | Off days | Sundays + public holidays (read from Sheets) |
-| Admin WhatsApp | Boss's number (`ADMIN_PHONE_NUMBER` env var) |
+| Admin WhatsApp | Siny's number (`ADMIN_PHONE_NUMBER` env var) |
 
 ---
 
@@ -63,7 +63,7 @@ natural WhatsApp messages — no app, no portal, no training required.
 ### High-Level Flow
 
 ```
-Boss (WhatsApp) ──► Meta Webhook ──► FastAPI (Cloud Run)
+Siny (WhatsApp) ──► Meta Webhook ──► FastAPI (Cloud Run)
                                            │
                                     ┌──────▼──────┐
                                     │  Supervisor   │ ◄── LangGraph router
@@ -113,10 +113,11 @@ supervisor → collector → supervisor → scheduler → supervisor → estimat
 ```
 1. Meta sends POST to /webhook
 2. FastAPI extracts sender_phone + text_body
-3. MemoryService.get_state(sender_phone) → loads prior session if multi-turn
-4. AgentState created (fresh or resumed)
-5. cjs_bot.invoke(state) → LangGraph graph runs
-6. Decision logic on rebuilt_state:
+3. **Immediate Acknowledgement:** If sender is Siny, FastAPI instantly sends "Working on it, Boss... 🔄"
+4. MemoryService.get_state(sender_phone) → loads prior session if multi-turn
+5. AgentState created (fresh or resumed)
+6. cjs_bot.invoke(state) → LangGraph graph runs
+7. Decision logic on rebuilt_state:
    a. is_missing_info=True  → send missing_fields_prompt, save state to memory
    b. is_missing_info=False → finalize DB writes + send final reply, clear memory
 ```
@@ -233,9 +234,10 @@ next_step: Literal["collector", "scheduler", "estimator", "social", "invoice", "
 | Condition | Action |
 |---|---|
 | `is_missing_info=True` | Route to `collector` again |
-| `is_missing_info=True` AND collector already tried | Route to `END` (ask Boss for info) |
+| `is_missing_info=True` AND collector already tried | Route to `END` (ask Siny for info) |
 | Fresh message involving an order | Route to `collector` first |
-| Boss asks for daily summary / schedule / tasks | Route to `secretary` |
+| Siny asks for daily summary / schedule / tasks | Route to `secretary` |
+| Final Reply Ready? (`state.final_reply` is set) | **Route to `END` immediately** |
 | Collector done, all info present | Route to `scheduler` |
 | Scheduler done | Route to `estimator` |
 | All steps complete, or simple query already answered | Route to `END` |
@@ -442,7 +444,7 @@ state.aggregated_reasoning += "[Estimator Agent]: ..."
 
 **File:** `src/agents/agent_6_secretary.py`
 **Model:** `gemini-flash-latest`, temperature=0.1
-**Trigger:** Boss asks "what are my tasks today?", "what's my schedule?", etc.
+**Trigger:** Siny asks "what are my tasks today?", "what's my schedule?", etc.
 **Also triggered:** Automatically every morning at 6:00 AM IST (see Section 15).
 
 ### Data gathered from Google Sheets
@@ -523,11 +525,13 @@ RULE 2: Fresh message with order content → always route to collector first.
 
 RULE 3: is_secretary_query=True → route to secretary.
 
-RULE 4: collector done, is_missing_info=False → route to scheduler.
+RULE 4: state.final_reply is set (Final Reply Ready) → route to END immediately.
+
+RULE 5: collector done, is_missing_info=False → route to scheduler.
         scheduler done → route to estimator.
         All steps done → route to END.
 
-RULE 5: Simple query already answered (payment, override, explanation) → route to END.
+RULE 6: Simple query already answered (payment, override, explanation) → route to END.
 ```
 
 ---
@@ -618,7 +622,7 @@ A manual trigger is available at `GET /trigger-daily-brief` for testing.
 
 **File:** `src/services/memory.py`
 
-Used for multi-turn conversations where Boss provides order info across multiple messages.
+Used for multi-turn conversations where Siny provides order info across multiple messages.
 
 ```
 Key scheme: sender_phone number
@@ -645,7 +649,7 @@ State is cleared after a successful complete response (`memory.clear_state()`).
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/webhook` | Meta webhook verification (subscribe handshake) |
-| `POST` | `/webhook` | Incoming WhatsApp messages |
+| `POST` | `/webhook` | Incoming WhatsApp messages (sends immediate acknowledgment) |
 | `GET` | `/` | Health ping with version |
 | `GET` | `/health` | Health check |
 | `GET` | `/trigger-daily-brief` | Manual secretary briefing trigger |
@@ -661,7 +665,7 @@ Check logs for details.
 
 ### Version
 
-Current: `v1.2.6`
+Current: `v1.2.7`
 
 ---
 
@@ -730,7 +734,7 @@ GOOGLE_SHEET_ID=               # Spreadsheet ID from the URL
 GEMINI_API_KEY=                # Google Gemini API key
 
 # App
-ADMIN_PHONE_NUMBER=            # Boss's WhatsApp number (for daily brief + error alerts)
+ADMIN_PHONE_NUMBER=            # Siny's WhatsApp number (for daily brief + error alerts)
 FAL_KEY=                       # fal.ai API key (for future social media agent)
 ```
 

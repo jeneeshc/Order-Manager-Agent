@@ -8,8 +8,8 @@
 ### 1. System Overview
 
 A multi-agent AI system deployed on **Google Cloud Run** that intercepts WhatsApp messages
-from Boss, orchestrates a network of specialised AI agents via **LangGraph**, and writes
-results back to **Google Sheets**. Boss's only interface is WhatsApp.
+from Siny, orchestrates a network of specialised AI agents via **LangGraph**, and writes
+results back to **Google Sheets**. Siny's only interface is WhatsApp.
 
 The Supervisor agent (Agent 0) acts as the LangGraph router — it analyses each message and
 state, decides which worker agent runs next, and synthesises the final WhatsApp reply.
@@ -90,8 +90,9 @@ See `docs/AGENT_DEVELOPMENT.md` for the complete guide and template.
   1. `is_missing_info=True` → route to `collector`
   2. Fresh order message → route to `collector` first
   3. `is_secretary_query=True` → route to `secretary`
-  4. After collector (all info present) → `scheduler` → `estimator` → `END`
-  5. Simple query already resolved → `END`
+  4. **`state.final_reply` is set → route to `END` immediately (priority)**
+  5. After collector (all info present) → `scheduler` → `estimator` → `END`
+  6. Simple query already resolved → `END`
 - **At END:** If `state.final_reply` is set → use verbatim. Else → LLM synthesis from reasoning.
 
 #### Agent 1 — Collector (`agent_1_collector.py`)
@@ -213,7 +214,7 @@ See `docs/AGENT_DEVELOPMENT.md` for the complete guide and template.
 | `GET` | `/` | Health ping (returns version) |
 | `GET` | `/health` | Health check |
 | `GET` | `/webhook` | Meta webhook subscription verification |
-| `POST` | `/webhook` | Incoming WhatsApp message handler |
+| `POST` | `/webhook` | Incoming WhatsApp message handler (sends immediate "Working on it... 🔄" acknowledgment) |
 | `GET` | `/trigger-daily-brief` | Manually trigger the morning briefing |
 
 ---
@@ -241,7 +242,7 @@ State is cleared on successful completion (`memory.clear_state()`).
 | Cloud Run auth | Implicit IAM — no credentials file needed in production |
 | API keys | Stored in GCP Secret Manager, injected as env vars |
 | WhatsApp webhook | Verified by `WHATSAPP_VERIFY_TOKEN` on GET handshake |
-| Admin errors | Error alerts sent only to `ADMIN_PHONE_NUMBER` |
+| Admin errors | Error alerts sent only to `Siny's number` / `ADMIN_PHONE_NUMBER` |
 
 ---
 

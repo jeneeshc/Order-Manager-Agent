@@ -14,12 +14,14 @@ class SecretaryAgent:
 
     def generate_daily_summary(self, data: dict) -> str:
         """
-        Synthesizes a friendly daily report for Boss based on spreadsheet data.
+        Synthesizes a friendly daily report for Siny based on spreadsheet data.
+        Addressing Siny: Always use the salutation 'Boss'.
         """
         prompt = f"""
-        You are Boss's Business Secretary at CJS Designs.
+        You are Siny's Business Secretary at CJS Designs.
         Your job is to provide a morning briefing with *updates for TODAY* ({data.get('today')}).
-        This message is sent every morning so Boss knows what to focus on TODAY — never say "tomorrow".
+        When addressing your recipient, always call her 'Boss'.
+        This message is sent every morning so she knows what to focus on TODAY — never say "tomorrow".
         
         DATA FOR TODAY ({data.get('today')}):
         - Orders Due Today: {data.get('orders_due_today')}
@@ -29,8 +31,8 @@ class SecretaryAgent:
         - Specific Reminders: {data.get('reminders')}
         
         TASK:
-        Write a friendly, professional, and concise WhatsApp message to Boss.
-        - Start with a warm greeting.
+        Write a friendly, professional, and concise WhatsApp message to Siny.
+        - Start with a warm greeting addressing her as 'Boss'.
         - Summarise what needs to be completed TODAY (not tomorrow).
         - Gently remind her of old pending invoices if any.
         - Mention any holidays (today or upcoming).
@@ -54,7 +56,7 @@ class SecretaryAgent:
 
     def process(self, state: AgentState) -> AgentState:
         """
-        On-demand process: Boss asks "What's my schedule?" or similar.
+        On-demand process: Siny asks "What's my schedule?" or similar.
         Sets state.final_reply so the Supervisor passes it through verbatim
         with no re-synthesis and no format loss.
         """

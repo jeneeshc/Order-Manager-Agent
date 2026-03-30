@@ -7,10 +7,10 @@
 
 ### 1. Executive Summary
 
-CJS Designs is a machine embroidery business operated by **Boss** (proprietor).
+CJS Designs is a machine embroidery business operated by **Siny** (proprietor).
 The system automates the complete order lifecycle — from WhatsApp message intake
 through production scheduling, cost estimation, invoicing, and daily business briefings —
-using a multi-agent AI framework. Boss interacts exclusively via WhatsApp; no separate
+using a multi-agent AI framework. Siny interacts exclusively via WhatsApp; no separate
 application, portal, or training is required.
 
 ---
@@ -33,8 +33,8 @@ application, portal, or training is required.
 
 | Stakeholder | Role |
 |---|---|
-| **Boss** | Proprietor — primary user, interacts via WhatsApp |
-| **Customers** | End consumers — receive estimates/confirmation indirectly through Boss |
+| **Siny** | Proprietor — primary user, interacts via WhatsApp |
+| **Customers** | End consumers — receive estimates/confirmation indirectly through Siny |
 
 ---
 
@@ -55,8 +55,9 @@ application, portal, or training is required.
 
 #### FR-1: Order Intake
 - Accept order details via WhatsApp text (or forwarded messages)
+- **Immediate Acknowledgment:** Instantly notify Boss ("Working on it... 🔄") upon message receipt to manage perceived latency
 - Extract: Customer name, Fabric type, Embroidery type, Stitch count, Quantity, Delivery date
-- If any required field is missing, ask Boss for clarification and retain partial state
+- If any required field is missing, ask Siny for clarification and retain partial state
 - Detect and warn about duplicate orders (same customer + same specs within 24 hours)
 
 #### FR-2: Production Scheduling
@@ -74,22 +75,22 @@ application, portal, or training is required.
 - Trigger automatically at **6:00 AM Indian Standard Time (IST)** every working day
 - Summarise: orders due today, pending invoices older than 7 days, today's holiday status,
   upcoming holidays in the next 7 days, and any active reminders
-- Also available on-demand when Boss asks ("what are my tasks today?")
+- Also available on-demand when Siny asks ("what are my tasks today?")
 
 #### FR-5: Invoice & Payment Tracking
 - Track payment status per order: pending → Estimated → invoiced → Completed
-- Allow Boss to mark an order as invoiced via WhatsApp ("mark CJS-XXXX as invoiced")
-- Notify Boss of order-ready status with payment amount due
+- Allow Siny to mark an order as invoiced via WhatsApp ("mark CJS-XXXX as invoiced")
+- Notify Siny of order-ready status with payment amount due
 
 #### FR-6: Database Operations (Direct Commands)
-Boss can issue natural language commands that execute directly:
+Siny can issue natural language commands that execute directly:
 - `"mark CJS-XXXX as invoiced"` → updates status in Sheets
 - `"change delivery date on CJS-XXXX to 10-April"` → field override
 - `"explain reasoning for CJS-XXXX"` → returns agent decision log (Column L)
 - `"who owes money?"` → returns pending payment report
 
 #### FR-7: Social Media Content (Planned)
-- Triggered when Boss uploads finished product photos
+- Triggered when Siny uploads finished product photos
 - Generate Instagram-ready caption with order context and hashtags
 - Integration with fal.ai for video/image enhancement
 
@@ -110,7 +111,7 @@ Boss can issue natural language commands that execute directly:
 
 ### 7. Google Sheets as Database
 
-Boss's Google Sheet is the sole persistent data store. It contains five named tabs:
+Siny's Google Sheet is the sole persistent data store. It contains five named tabs:
 
 | Tab | Purpose |
 |---|---|

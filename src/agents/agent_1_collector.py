@@ -43,7 +43,8 @@ class OrderCollectorAgent:
         print(f"[{self.name}] Activating Gemini LLM on: {state.raw_message}")
         
         # Build prompt injecting Memory State if it exists
-        prompt = f"""You are Boss's WhatsApp Order Assistant.
+        prompt = f"""You are Siny's WhatsApp Order Assistant.
+        When addressing Siny, always use the salutation 'Boss'.
         Read this new text message: "{state.raw_message}"
         
         PRIOR KNOWLEDGE EXTRACTED: 
@@ -58,7 +59,8 @@ class OrderCollectorAgent:
         If an Order ID (like CJS-12345) is mentioned, exactly extract it into 'referenced_order_id'.
         If they specify a quantity (like "5 pieces" or "numbers 10"), extract that too.
         If they specify a new material, style, or stitch count for an existing order, extract those too.
-        If Boss asks for a daily summary, work schedule, status update on her tasks, or anything about "what needs to be done today", set 'is_secretary_query=True'.
+        If the user asks for a daily summary, work schedule, status update on her tasks, or anything about "what needs to be done today", set 'is_secretary_query=True'.
+        Note: The user is Siny, but she should be addressed as 'Boss'.
         """
         
         # Generative AI reads the human text and extracts the core fields
@@ -175,7 +177,7 @@ class OrderCollectorAgent:
                     state.customer_name, state.sender_id, state.fabric_type, state.embroidery_type, state.stitch_count
                 )
                 if is_duplicate:
-                    print(f"[{self.name}] Duplicate detected! Prompting Boss for confirmation.")
+                    print(f"[{self.name}] Duplicate detected! Prompting Siny for confirmation.")
                     state.is_missing_info = True
                     state.missing_fields_prompt = f"It looks like an identical order was already placed by {state.customer_name} today ({state.stitch_count} stitches of {state.embroidery_type} on {state.fabric_type}). Are you sure you want to duplicate it? Please say 'Yes' to confirm."
                     return state

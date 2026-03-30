@@ -114,6 +114,10 @@ async def handle_webhook(request: Request):
 
                         print(f"[RECV] Message from {sender_phone}: {text_body}")
                         
+                        # ✨ Immediate Acknowledgment to Siny to manage perceived latency ✨
+                        if sender_phone == ADMIN_PHONE_NUMBER:
+                            whatsapp_service.send_text_message(sender_phone, "Working on your request, Boss... 🔄")
+                        
                         try:
                             # 1. Load context from Persistence
                             prior_state_dict = memory_service.get_state(sender_phone)
@@ -149,6 +153,7 @@ async def handle_webhook(request: Request):
                                      db_service.append_order(rebuilt_state)
 
                                  # 4. Final Reply
+                                 print(f"[SEND] Final response for {sender_phone}: {rebuilt_state.raw_message[:50]}...")
                                  whatsapp_service.send_text_message(sender_phone, rebuilt_state.raw_message)
                                  
                                  # Clear state as the task is finished

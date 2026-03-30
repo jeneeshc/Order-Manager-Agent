@@ -7,12 +7,12 @@
 ```mermaid
 graph TD
     %% External Interfaces
-    Boss((Boss\nProprietor)) <-->|WhatsApp\nText / Voice| WA[Meta WhatsApp\nCloud API v22.0]
+    Siny((Siny\nProprietor)) <-->|WhatsApp\nText / Voice| WA[Meta WhatsApp\nCloud API v22.0]
 
     %% GCP Infrastructure
     subgraph GCP [Google Cloud Platform — Cloud Run]
         WA <-->|POST /webhook| API[FastAPI\nWebhook Handler]
-
+        API -.->|Immediate Ack| WA
         API -->|invoke| Graph
 
         subgraph Graph [LangGraph — Supervisor-Led Loopback Graph]
@@ -55,7 +55,7 @@ graph TD
     classDef agent fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
     classDef db fill:#fff3e0,stroke:#ff9800,stroke-width:2px
 
-    class Boss,WA external
+    class Siny,WA external
     class API,SCHED gcp
     class SUP,COL,SCH,EST,SOC,INV,SEC agent
     class GSheets,Memory db
@@ -71,6 +71,7 @@ each step. The Supervisor decides the next agent dynamically based on the curren
 - Re-routing if info is still missing after Collector runs
 - Skipping agents that are not relevant to the current query
 - Handling mixed-intent messages (e.g., "add this order AND tell me my tasks today")
+- **Instant Response Routing:** If an agent sets `final_reply`, the Supervisor priorities routing to `END` immediately to deliver the message.
 
 ### `final_reply` Output Contract
 
@@ -88,5 +89,5 @@ At `END`, the Supervisor checks:
 ### Daily Briefing (Scheduled)
 
 `APScheduler` inside the FastAPI process fires `SecretaryAgent.generate_daily_summary()`
-at **6:00 AM IST** and sends the result directly to Boss via WhatsApp — bypassing the
+at **6:00 AM IST** and sends the result directly to Siny via WhatsApp — bypassing the
 LangGraph entirely. Also available via `GET /trigger-daily-brief`.
