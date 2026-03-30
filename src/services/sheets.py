@@ -43,7 +43,7 @@ class GoogleSheetsService:
             state.sender_id,                                        # D: Phone
             state.fabric_type or "Unknown",                        # E: Material
             state.embroidery_type or "Unknown",                    # F: Embroidery Type
-            state.stitch_count or 0,                               # G: Stitch Count
+            int(state.stitch_count) if state.stitch_count and str(state.stitch_count).isdigit() else 0, # G: Stitch Count
             state.machine_assigned or "Pending",                   # H: Machine
             state.estimated_completion_date or "Unknown",          # I: Estimated Delivery Date
             f"Rs {state.total_cost_rs or 0}",                      # J: Estimated Cost
@@ -521,18 +521,24 @@ class GoogleSheetsService:
                 except ValueError:
                     pass
                 
-                # Compare fields loosely (case-insensitive)
+                # Compare fields safely with null-handling
                 r_customer = str(row[2]).strip().lower() if len(row) > 2 else ""
                 r_phone    = str(row[3]).strip() if len(row) > 3 else ""
                 r_fabric   = str(row[4]).strip().lower() if len(row) > 4 else ""
                 r_style    = str(row[5]).strip().lower() if len(row) > 5 else ""
                 r_stitch   = str(row[6]).strip() if len(row) > 6 else ""
                 
-                if (r_customer == customer_id.strip().lower() and
-                    r_phone == phone.strip() and
-                    r_fabric == fabric_type.strip().lower() and
-                    r_style == embroidery_type.strip().lower() and
-                    r_stitch == str(stitch_count).strip()):
+                c_id = str(customer_id).strip().lower() if customer_id else ""
+                c_phone = str(phone).strip() if phone else ""
+                c_fabric = str(fabric_type).strip().lower() if fabric_type else ""
+                c_style = str(embroidery_type).strip().lower() if embroidery_type else ""
+                c_stitch = str(stitch_count).strip() if stitch_count else ""
+                
+                if (r_customer == c_id and
+                    r_phone    == c_phone and
+                    r_fabric   == c_fabric and
+                    r_style    == c_style and
+                    r_stitch   == c_stitch):
                     print(f"[SheetsAPI] Duplicate detected from {order_dt} for {customer_id}")
                     return True
                     

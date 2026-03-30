@@ -42,25 +42,22 @@ class OrderCollectorAgent:
     def process(self, state: AgentState) -> AgentState:
         print(f"[{self.name}] Activating Gemini LLM on: {state.raw_message}")
         
-        # Build prompt injecting Memory State if it exists
-        prompt = f"""You are Siny's WhatsApp Order Assistant.
-        When addressing Siny, always use the salutation 'Boss'.
-        Read this new text message: "{state.raw_message}"
+        # Build prompt focused strictly on extraction results
+        prompt = f"""Extract order details from this WhatsApp message: "{state.raw_message}"
         
         PRIOR KNOWLEDGE EXTRACTED: 
-        (If you already have these, do not extract them again. You only need to extract what is in the new message!)
+        (If you already have these, do not extract them again!)
         - Known Customer Name: {state.customer_name or 'None'}
         - Known Fabric: {state.fabric_type or 'None'}
         - Known Embroidery: {state.embroidery_type or 'None'}
         - Known Stitches: {state.stitch_count or 'None'}
         
-        TASK:
-        Extract any business details from this message.
-        If an Order ID (like CJS-12345) is mentioned, exactly extract it into 'referenced_order_id'.
-        If they specify a quantity (like "5 pieces" or "numbers 10"), extract that too.
-        If they specify a new material, style, or stitch count for an existing order, extract those too.
-        If the user asks for a daily summary, work schedule, status update on her tasks, or anything about "what needs to be done today", set 'is_secretary_query=True'.
-        Note: The user is Siny, but she should be addressed as 'Boss'.
+        INSTRUCTIONS:
+        1. Extract: name, material/fabric, embroidery style, and stitch count.
+        2. If "Numbers 10" or "Qty 5" is mentioned, extract that into 'quantity'.
+        3. If a specific Order ID (CJS-XXXXXX) is mentioned, set 'referenced_order_id'.
+        4. If the message is about daily summary or today's tasks, set 'is_secretary_query=True'.
+        5. Provide a helpful 'missing_fields_prompt' if key info is still absent.
         """
         
         # Generative AI reads the human text and extracts the core fields
@@ -141,9 +138,17 @@ class OrderCollectorAgent:
             else:
                 print(f"[{self.name}] DB order not found. Falling back to chat extraction exclusively.")
         
-        # Hydrate customer_name from extraction
+        # Hydrate customer_name from extraction and look up ID
         if extraction.customer_name:
             state.customer_name = extraction.customer_name
+            db = GoogleSheetsService()
+            cid = db.get_customer_id_by_name(extraction.customer_name)
+            if cid:
+                print(f"[{self.name}] Linked Customer '{extraction.customer_name}' to ID: {cid}")
+                state.customer_id = cid
+            else:
+                print(f"[{self.name}] Customer '{extraction.customer_name}' not found in DB.")
+                state.customer_id = "New Customer"
 
         # Safely hydrate state if AI explicitly extracted something NEW
         if extraction.fabric_type and not extraction.referenced_order_id:
