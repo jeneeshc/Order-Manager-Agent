@@ -9,7 +9,7 @@ class EstimationAgent:
         """
         Agent 3 Logic:
         - Re-confirm stitch count natively.
-        - Cross-Pollinate Embroidery & Material matching exactly against Siny's Costing Tuple DB.
+        - Cross-Pollinate Embroidery & Material matching exactly against Boss's Costing Tuple DB.
         - Calculate cost = (Stitch Count / Unit Count) * Cost in Rupees.
         """
         if not state.stitch_count: return state

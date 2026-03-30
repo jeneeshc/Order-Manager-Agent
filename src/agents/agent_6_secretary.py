@@ -14,11 +14,12 @@ class SecretaryAgent:
 
     def generate_daily_summary(self, data: dict) -> str:
         """
-        Synthesizes a friendly daily report for Siny based on spreadsheet data.
+        Synthesizes a friendly daily report for Boss based on spreadsheet data.
         """
         prompt = f"""
-        You are Siny's Business Secretary at CJS Designs. 
-        Your job is to provide a morning briefing based on the following data:
+        You are Boss's Business Secretary at CJS Designs.
+        Your job is to provide a morning briefing with *updates for TODAY* ({data.get('today')}).
+        This message is sent every morning so Boss knows what to focus on TODAY — never say "tomorrow".
         
         DATA FOR TODAY ({data.get('today')}):
         - Orders Due Today: {data.get('orders_due_today')}
@@ -28,15 +29,16 @@ class SecretaryAgent:
         - Specific Reminders: {data.get('reminders')}
         
         TASK:
-        Write a friendly, professional, and concise WhatsApp message to Siny.
+        Write a friendly, professional, and concise WhatsApp message to Boss.
         - Start with a warm greeting.
-        - List what needs to be completed today.
+        - Summarise what needs to be completed TODAY (not tomorrow).
         - Gently remind her of old pending invoices if any.
         - Mention any holidays (today or upcoming).
         - Include the specific reminders from the Reminders sheet.
         - End with an encouraging note.
         
-        Use emojis and formatting (bolding) to make it readable.
+        Use emojis and *bold* formatting to make it readable on WhatsApp.
+        IMPORTANT: This is a briefing for TODAY. Do NOT say "tomorrow" anywhere.
         """
         
         response = self.llm.invoke(prompt)
@@ -52,7 +54,9 @@ class SecretaryAgent:
 
     def process(self, state: AgentState) -> AgentState:
         """
-        On-demand process: Siny asks "What's my schedule?" or similar.
+        On-demand process: Boss asks "What's my schedule?" or similar.
+        Sets state.final_reply so the Supervisor passes it through verbatim
+        with no re-synthesis and no format loss.
         """
         print(f"[{self.name}] Generating dynamic work summary on-demand...")
         
@@ -61,9 +65,8 @@ class SecretaryAgent:
         
         summary = self.generate_daily_summary(data)
         
-        # We append the summary to the reasoning or just pass it back?
-        # For on-demand, the API will use this result to reply.
-        state.aggregated_reasoning += f"\n[Secretary Agent]: Generated daily summary on-demand.\n"
-        state.raw_message = summary # Overwriting raw_message to be used as reply in main.py
+        # Own the reply format — Supervisor will send this verbatim at END.
+        state.final_reply = summary
+        state.aggregated_reasoning += f"\n[Secretary Agent]: Generated and stored daily briefing in final_reply.\n"
         
         return state

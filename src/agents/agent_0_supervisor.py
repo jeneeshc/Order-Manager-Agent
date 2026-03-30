@@ -28,10 +28,10 @@ class SupervisorAgent:
         3. If no further actions are needed, sets next_step="END".
         """
         prompt = f"""
-        You are the Head Supervisor for Siny's Embroidery Business (CJS Designs).
+        You are the Head Supervisor for Boss's Embroidery Business (CJS Designs).
         Your job is to coordinate different specialist agents to fulfill a customer's request.
         
-        MESSAGE FROM SINY: "{state.raw_message}"
+        MESSAGE FROM BOSS: "{state.raw_message}"
         
         CURRENT STATE:
         - Customer: {state.customer_name or 'Unknown'}
@@ -52,9 +52,9 @@ class SupervisorAgent:
         - 'invoice': Handles payment status, pending dues, and finalizes orders.
         
         DECISION RULES:
-        1. CRITICAL: If 'Missing Info? True' (is_missing_info), you MUST route to 'collector' to gather the missing details. If you have already tried 'collector' and 'is_missing_info' remains True, route to 'END' to ask Siny for clarification.
+        1. CRITICAL: If 'Missing Info? True' (is_missing_info), you MUST route to 'collector' to gather the missing details. If you have already tried 'collector' and 'is_missing_info' remains True, route to 'END' to ask Boss for clarification.
         2. If 'Missing Info? False' or this is a fresh user message, ALWAYS prioritize routing to 'collector' first if an order is involved.
-        3. If Siny asks for a daily summary, work schedule, or "what to do today", route to 'secretary'.
+        3. If Boss asks for a daily summary, work schedule, or "what to do today", route to 'secretary'.
         4. Proceed to 'scheduler' and 'estimator' only after 'collector' confirms ALL required info (is_missing_info=False).
         5. If all business logic (scheduling, cost, invoicing) is complete or it's a simple query already answered, route to 'END'.
         """
@@ -62,39 +62,49 @@ class SupervisorAgent:
         decision = self.router.invoke(prompt)
         print(f"[{self.name}] Router Decision: {decision.next_step} ({decision.reasoning})")
         
-        # If the task is finished, synthesize the final response to Siny
+        # If the task is finished, send the final response to Boss.
         if decision.next_step == "END":
-            print(f"[{self.name}] Task complete. Synthesizing final response...")
-            final_prompt = f"""
-            You are Siny's Business Supervisor. The task is complete.
-            Based on the following aggregated work from your specialists, write a single final WhatsApp message to Siny.
-            
-            WORK REASONING:
-            {state.aggregated_reasoning}
-            
-            STATE DETAILS:
-            - Order ID: {state.order_id or 'New Order'}
-            - Est. Completion: {state.estimated_completion_date or 'N/A'}
-            - Total Cost: Rs {state.total_cost_rs or 'N/A'}
-            - Material: {state.fabric_type or 'N/A'}
-            - Stitches: {state.stitch_count or 'N/A'}
-            - Invoicing Status: {state.invoice_status or 'N/A'}
-            
-            If it was a simple info extraction, give her the details. 
-            If it was an order, confirm it's saved/updated.
-            If it was a secretary task, give her the briefing.
-            
-            DO NOT mention "Supervisor" or "Agents" in the final message. Be friendly and professional.
-            """
-            final_response = self.llm.invoke(final_prompt)
-            state.raw_message = str(final_response.content).strip()
-            
-            # Robustly extract text from Gemini's response blocks if needed (same as Secretary Agent fix)
-            if isinstance(final_response.content, list):
-                state.raw_message = " ".join(
-                    block.get("text", "") if isinstance(block, dict) else str(block)
-                    for block in final_response.content
-                ).strip()
+            print(f"[{self.name}] Task complete. Preparing final response...")
+
+            if state.final_reply:
+                # An agent has already written its formatted reply — pass it through verbatim.
+                # No extra LLM call. No format loss. No duplicates.
+                state.raw_message = state.final_reply
+                print(f"[{self.name}] Using agent's final_reply verbatim (no re-synthesis).")
+            else:
+                # Multi-step order flow: no single agent owns the reply.
+                # Supervisor synthesizes ONE coherent message from all agents' reasoning.
+                print(f"[{self.name}] Synthesizing final reply from aggregated reasoning...")
+                final_prompt = f"""
+                You are Boss's Business Supervisor. The task is complete.
+                Based on the following aggregated work from your specialists, write a single final WhatsApp message to Boss.
+                
+                WORK REASONING:
+                {state.aggregated_reasoning}
+                
+                STATE DETAILS:
+                - Order ID: {state.order_id or 'New Order'}
+                - Est. Completion: {state.estimated_completion_date or 'N/A'}
+                - Total Cost: Rs {state.total_cost_rs or 'N/A'}
+                - Material: {state.fabric_type or 'N/A'}
+                - Stitches: {state.stitch_count or 'N/A'}
+                - Invoicing Status: {state.invoice_status or 'N/A'}
+                
+                If it was an order, confirm it's saved and give Boss the key details (ID, date, cost).
+                If it was a simple info extraction, give her the details.
+                
+                DO NOT mention "Supervisor" or "Agents" in the final message.
+                Be friendly and professional. Use emojis and *bold* formatting for WhatsApp readability.
+                """
+                final_response = self.llm.invoke(final_prompt)
+                state.raw_message = str(final_response.content).strip()
+
+                # Robustly extract text if response is a list of blocks (Gemini format)
+                if isinstance(final_response.content, list):
+                    state.raw_message = " ".join(
+                        block.get("text", "") if isinstance(block, dict) else str(block)
+                        for block in final_response.content
+                    ).strip()
 
         # In a supervisor-led loopback, we use next_step to control the graph edge
         state.next_step = decision.next_step

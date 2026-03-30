@@ -12,7 +12,7 @@ class WhatsAppService:
         }
 
     def send_text_message(self, recipient_number: str, message: str):
-        """Sends a freeform text message back to the customer/Siny."""
+        """Sends a freeform text message back to the customer/Boss."""
         payload = {
             "messaging_product": "whatsapp",
             "to": recipient_number,

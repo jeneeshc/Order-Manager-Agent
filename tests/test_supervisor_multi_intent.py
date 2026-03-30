@@ -41,7 +41,7 @@ def test_supervisor_multi_intent():
         }
 
         # Mixed Intent: New Order + Secretary Query
-        initial_message = "Hi Siny, create a new order for Bob. 5000 stitches of standard embroidery on Silk. Also, what else is due today?"
+        initial_message = "Hi Boss, create a new order for Bob. 5000 stitches of standard embroidery on Silk. Also, what else is due today?"
         state = AgentState(raw_message=initial_message, sender_id="123")
         
         print(f"Input Message: {initial_message}")

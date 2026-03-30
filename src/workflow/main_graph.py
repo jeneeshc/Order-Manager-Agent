@@ -63,7 +63,7 @@ cjs_bot = builder.compile()
 
 if __name__ == "__main__":
     # Test Mixed Intent
-    test_state = AgentState(raw_message="Hi Siny, update order CJS-12345 to 8000 stitches. Also, what are my tasks for today?")
+    test_state = AgentState(raw_message="Hi Boss, update order CJS-12345 to 8000 stitches. Also, what are my tasks for today?")
     print("--- STARTING SUPERVISOR GRAPH ---")
     final_output = cjs_bot.invoke(test_state)
     print("--- FINAL OUTPUT ---")

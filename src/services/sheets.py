@@ -6,7 +6,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 class GoogleSheetsService:
-    """Wrapper for writing outputs directly to Siny's spreadsheet."""
+    """Wrapper for writing outputs directly to Boss's spreadsheet."""
     def __init__(self):
         self.spreadsheet_id = os.getenv("GOOGLE_SHEET_ID")
         self.creds_file = r"d:\Projects\CJSDesigns\credentials.json"
@@ -202,7 +202,7 @@ class GoogleSheetsService:
 
     def get_holidays(self) -> list:
         """
-        Reads explicitly marked off-days from the 'Holidays' tab in Siny's Google Sheet.
+        Reads explicitly marked off-days from the 'Holidays' tab in Boss's Google Sheet.
         Explicitly bypasses Header A1 and parses strict 2-April-2026 formats natively.
         """
         holidays = []
@@ -221,7 +221,7 @@ class GoogleSheetsService:
                 if len(row) > 0:
                     date_str = str(row[0]).strip()
                     try:
-                        # Map native Siny format: 2-April-2026
+                        # Map native Boss format: 2-April-2026
                         dt = datetime.datetime.strptime(date_str, "%d-%B-%Y").date()
                         holidays.append(dt)
                     except ValueError:
@@ -241,7 +241,7 @@ class GoogleSheetsService:
 
     def get_costing_rules(self) -> dict:
         """
-        Extracts variable combinatorial pricing natively from Siny's 'Costing' tab.
+        Extracts variable combinatorial pricing natively from Boss's 'Costing' tab.
         Strict 5-Column Requirement: [Embroidery(A), Material(B), Unit(C), UnitCount(D), Cost(E)]
         """
         rules = {}
@@ -319,7 +319,7 @@ class GoogleSheetsService:
 
     def update_order_field(self, order_id: str, field: str, new_value: str) -> bool:
         """
-        Allows Siny to manually override an AI-generated field on an existing order.
+        Allows Boss to manually override an AI-generated field on an existing order.
         Writes to override columns L (delivery_date), M (cost), or N (machine).
         Also appends a timestamped note to Column K (reasoning log).
         
@@ -376,7 +376,7 @@ class GoogleSheetsService:
 
             # Step 4: Append override audit note to Col L (reasoning)
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-            override_note = f"\n[Override - {timestamp}]: Siny manually changed '{field}' to '{new_value}'."
+            override_note = f"\n[Override - {timestamp}]: Boss manually changed '{field}' to '{new_value}'."
             updated_k = existing_k + override_note
             self.service.spreadsheets().values().update(
                 spreadsheetId=self.spreadsheet_id,

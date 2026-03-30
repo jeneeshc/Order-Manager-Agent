@@ -48,8 +48,25 @@ class AgentState(BaseModel):
     # supervisor-led orchestration fields
     next_step: str = Field(default="supervisor")
     worker_feedback: str = Field(default="")
-    
+
+    # -------------------------------------------------------------------------
+    # FINAL REPLY CONTRACT  (see docs/AGENT_DEVELOPMENT.md for full details)
+    # -------------------------------------------------------------------------
+    # Every agent MUST follow one of two patterns:
+    #
+    #   PATTERN A — Self-contained query (agent owns the WhatsApp reply):
+    #     Set state.final_reply = "your formatted message"
+    #     Supervisor passes it straight to WhatsApp — verbatim, zero extra LLM call.
+    #
+    #   PATTERN B — Intermediate pipeline step (feeds another agent):
+    #     Do NOT set final_reply. Append to state.aggregated_reasoning only.
+    #     Supervisor synthesizes a single reply from all agents' reasoning at END.
+    #
+    # NEVER set state.raw_message directly inside an agent. That is Supervisor-only.
+    # -------------------------------------------------------------------------
+    final_reply: Optional[str] = None
+
     # Manual Field Override state
     is_field_override: bool = Field(default=False)
     override_field: Optional[str] = None   # "delivery_date" | "cost" | "machine"
-    override_value: Optional[str] = None   # The new value Siny specified
+    override_value: Optional[str] = None   # The new value Boss specified

@@ -1,15 +1,19 @@
 import os
 import json
+import pytz
 import uvicorn
 import traceback
 from fastapi import FastAPI, Request, Query, Response
 from dotenv import load_dotenv
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 # Internal imports
 from src.services.whatsapp import WhatsAppService
 from src.services.memory import MemoryService
 from src.services.sheets import GoogleSheetsService
 from src.agents.state import AgentState
+from src.agents.agent_6_secretary import SecretaryAgent
 from src.workflow.main_graph import cjs_bot
 
 # Load environment variables
@@ -20,12 +24,32 @@ app = FastAPI()
 # Configuration
 VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN")
 ADMIN_PHONE_NUMBER = os.environ.get("ADMIN_PHONE_NUMBER")
-VERSION = "1.2.5"
+VERSION = "1.2.6"
+IST = pytz.timezone("Asia/Kolkata")
 
 # Initialize services
 whatsapp_service = WhatsAppService()
 memory_service = MemoryService()
 db_service = GoogleSheetsService()
+secretary_agent = SecretaryAgent()
+
+# Scheduler (fires at 6:00 AM IST daily)
+scheduler = AsyncIOScheduler(timezone=IST)
+
+async def send_daily_briefing():
+    """Triggered at 6:00 AM IST — generates and sends the morning brief to Boss."""
+    print("[Scheduler] Triggering daily briefing at 6:00 AM IST...")
+    try:
+        data = db_service.get_secretary_data()
+        summary = secretary_agent.generate_daily_summary(data)
+        if ADMIN_PHONE_NUMBER and summary:
+            whatsapp_service.send_text_message(ADMIN_PHONE_NUMBER, summary)
+            print(f"[Scheduler] Daily briefing sent to {ADMIN_PHONE_NUMBER}.")
+        else:
+            print("[Scheduler] Skipped: ADMIN_PHONE_NUMBER not set or summary empty.")
+    except Exception as e:
+        print(f"[Scheduler] Daily briefing failed: {e}")
+        print(traceback.format_exc())
 
 @app.on_event("startup")
 async def startup_event():
@@ -33,6 +57,16 @@ async def startup_event():
     print(f"Gemini API Key: {'Set' if os.environ.get('GEMINI_API_KEY') else 'MISSING'}")
     print(f"Sheet ID: {'Set' if os.environ.get('GOOGLE_SHEET_ID') else 'MISSING'}")
     print(f"Admin Phone: {ADMIN_PHONE_NUMBER}")
+    
+    # Schedule daily briefing at 6:00 AM IST (Asia/Kolkata)
+    scheduler.add_job(
+        send_daily_briefing,
+        CronTrigger(hour=6, minute=0, timezone=IST),
+        id="daily_briefing",
+        replace_existing=True
+    )
+    scheduler.start()
+    print("[Scheduler] Daily briefing scheduled at 06:00 AM IST (Asia/Kolkata) every day.")
 
 @app.get("/")
 async def root():
@@ -40,7 +74,13 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "timestamp": "2026-03-29", "version": VERSION}
+    return {"status": "healthy", "timestamp": "2026-03-30", "version": VERSION}
+
+@app.get("/trigger-daily-brief")
+async def trigger_daily_brief():
+    """Manual / Cloud Scheduler endpoint to trigger the morning brief."""
+    await send_daily_briefing()
+    return {"status": "sent", "recipient": ADMIN_PHONE_NUMBER}
 
 @app.get("/webhook")
 async def verify_webhook(

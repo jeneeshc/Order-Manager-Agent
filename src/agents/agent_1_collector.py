@@ -43,7 +43,7 @@ class OrderCollectorAgent:
         print(f"[{self.name}] Activating Gemini LLM on: {state.raw_message}")
         
         # Build prompt injecting Memory State if it exists
-        prompt = f"""You are Siny's WhatsApp Order Assistant.
+        prompt = f"""You are Boss's WhatsApp Order Assistant.
         Read this new text message: "{state.raw_message}"
         
         PRIOR KNOWLEDGE EXTRACTED: 
@@ -58,7 +58,7 @@ class OrderCollectorAgent:
         If an Order ID (like CJS-12345) is mentioned, exactly extract it into 'referenced_order_id'.
         If they specify a quantity (like "5 pieces" or "numbers 10"), extract that too.
         If they specify a new material, style, or stitch count for an existing order, extract those too.
-        If Siny asks for a daily summary, work schedule, status update on her tasks, or anything about "what needs to be done today", set 'is_secretary_query=True'.
+        If Boss asks for a daily summary, work schedule, status update on her tasks, or anything about "what needs to be done today", set 'is_secretary_query=True'.
         """
         
         # Generative AI reads the human text and extracts the core fields
@@ -84,12 +84,21 @@ class OrderCollectorAgent:
             state.is_status_update = True
             state.new_invoice_status = "Invoiced"
             state.order_id = extraction.referenced_order_id
+            state.final_reply = (
+                f"✅ *Status Updated!*\n"
+                f"Order *{extraction.referenced_order_id}* has been marked as *Invoiced*. 📋"
+            )
             return state
             
         # ✨ 0.5 Intercept RAG History Explanations instantly! ✨
         if extraction.explain_reasoning and extraction.referenced_order_id:
             state.is_explanation_request = True
             state.order_id = extraction.referenced_order_id
+            state.final_reply = (
+                f"🔍 *Order Reasoning — {extraction.referenced_order_id}*\n\n"
+                f"I've retrieved the full agent decision log for this order. "
+                f"You can review the scheduling, costing, and machine assignment reasoning in your Orders sheet, Column L."
+            )
             return state
 
         # ✨ 0.6 Intercept Manual Field Override commands! ✨
@@ -98,6 +107,11 @@ class OrderCollectorAgent:
             state.order_id = extraction.referenced_order_id
             state.override_field = extraction.override_field
             state.override_value = extraction.override_value
+            state.final_reply = (
+                f"✅ *Field Updated!*\n"
+                f"Order *{extraction.referenced_order_id}* — "
+                f"*{extraction.override_field.replace('_', ' ').title()}* has been updated to *{extraction.override_value}*. ✏️"
+            )
             return state
 
         # ✨ 0.7 Intercept Payment Query! ✨
@@ -161,7 +175,7 @@ class OrderCollectorAgent:
                     state.customer_name, state.sender_id, state.fabric_type, state.embroidery_type, state.stitch_count
                 )
                 if is_duplicate:
-                    print(f"[{self.name}] Duplicate detected! Prompting Siny for confirmation.")
+                    print(f"[{self.name}] Duplicate detected! Prompting Boss for confirmation.")
                     state.is_missing_info = True
                     state.missing_fields_prompt = f"It looks like an identical order was already placed by {state.customer_name} today ({state.stitch_count} stitches of {state.embroidery_type} on {state.fabric_type}). Are you sure you want to duplicate it? Please say 'Yes' to confirm."
                     return state

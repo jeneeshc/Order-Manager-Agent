@@ -9,7 +9,7 @@ class FalAppService:
 
     def generate_instagram_video(self, product_image_url: str, prompt: str) -> str:
         """
-        Takes Siny's static finished product image and generates a high quality
+        Takes Boss's static finished product image and generates a high quality
         aesthetic short video for social media using fal.ai.
         """
         # Example using fal.ai fast video or image-to-video model
