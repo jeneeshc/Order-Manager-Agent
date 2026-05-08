@@ -3,7 +3,7 @@ import json
 import pytz
 import uvicorn
 import traceback
-from fastapi import FastAPI, Request, Query, Response
+from fastapi import FastAPI, Request, Query, Response, BackgroundTasks
 from dotenv import load_dotenv
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -95,8 +95,60 @@ async def verify_webhook(
         return Response(content=challenge, media_type="text/plain")
     return Response(content="Forbidden", status_code=403)
 
+def process_webhook_message(sender_phone: str, text_body: str):
+    """Processes the incoming WhatsApp message in the background."""
+    try:
+        # 1. Load context from Persistence
+        prior_state_dict = memory_service.get_state(sender_phone)
+        
+        if prior_state_dict:
+            print(f"[MEM] Resuming session for {sender_phone}")
+            initial_state = AgentState(**prior_state_dict)
+            # Reset flags to force the Supervisor to re-evaluate the new message
+            initial_state.raw_message = text_body
+            initial_state.is_missing_info = False
+            initial_state.next_step = "supervisor"
+        else:
+            print(f"[MEM] Fresh session for {sender_phone}")
+            initial_state = AgentState(raw_message=text_body, sender_id=sender_phone)
+        
+        # 2. Execute the LangGraph chain
+        final_state_dict = cjs_bot.invoke(initial_state)
+        rebuilt_state = AgentState(**final_state_dict)
+        
+        # 3. Decision logic
+        if rebuilt_state.is_missing_info:
+             # Bot needs more info (from Collector worker)
+             whatsapp_service.send_text_message(sender_phone, rebuilt_state.missing_fields_prompt)
+             memory_service.save_state(sender_phone, rebuilt_state)
+        else:
+             # Finalize any Database changes
+             if rebuilt_state.order_id:
+                 if rebuilt_state.is_status_update:
+                     db_service.update_order_status(rebuilt_state.order_id, rebuilt_state.new_invoice_status)
+                 else:
+                     db_service.update_order(rebuilt_state)
+             elif not any([rebuilt_state.is_explanation_request, rebuilt_state.is_secretary_query, rebuilt_state.is_payment_query]):
+                 db_service.append_order(rebuilt_state)
+
+             # 4. Final Reply
+             print(f"[SEND] Final response for {sender_phone}: {rebuilt_state.raw_message[:50]}...")
+             whatsapp_service.send_text_message(sender_phone, rebuilt_state.raw_message)
+             
+             # Clear state as the task is finished
+             memory_service.clear_state(sender_phone)
+
+    except Exception as e:
+        error_trace = traceback.format_exc()
+        print(f"[ERROR] Failed Webhook execution sequence: {e}")
+        print(error_trace)
+        
+        # NOTIFY the user about the failure (Helpful for debugging)
+        error_msg = f"⚠️ *Internal Error:* {str(e)}\n\nCheck logs for details."
+        whatsapp_service.send_text_message(sender_phone, error_msg)
+
 @app.post("/webhook")
-async def handle_webhook(request: Request):
+async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
     """WhatsApp Webhook message handler (POST)."""
     data = await request.json()
     
@@ -118,55 +170,8 @@ async def handle_webhook(request: Request):
                         # ✨ Immediate Acknowledgment to Siny to manage perceived latency ✨
                         whatsapp_service.send_text_message(sender_phone, "Working on your request, Boss... 🔄")
                         
-                        try:
-                            # 1. Load context from Persistence
-                            prior_state_dict = memory_service.get_state(sender_phone)
-                            
-                            if prior_state_dict:
-                                print(f"[MEM] Resuming session for {sender_phone}")
-                                initial_state = AgentState(**prior_state_dict)
-                                # Reset flags to force the Supervisor to re-evaluate the new message
-                                initial_state.raw_message = text_body
-                                initial_state.is_missing_info = False
-                                initial_state.next_step = "supervisor"
-                            else:
-                                print(f"[MEM] Fresh session for {sender_phone}")
-                                initial_state = AgentState(raw_message=text_body, sender_id=sender_phone)
-                            
-                            # 2. Execute the LangGraph chain
-                            final_state_dict = cjs_bot.invoke(initial_state)
-                            rebuilt_state = AgentState(**final_state_dict)
-                            
-                            # 3. Decision logic
-                            if rebuilt_state.is_missing_info:
-                                 # Bot needs more info (from Collector worker)
-                                 whatsapp_service.send_text_message(sender_phone, rebuilt_state.missing_fields_prompt)
-                                 memory_service.save_state(sender_phone, rebuilt_state)
-                            else:
-                                 # Finalize any Database changes
-                                 if rebuilt_state.order_id:
-                                     if rebuilt_state.is_status_update:
-                                         db_service.update_order_status(rebuilt_state.order_id, rebuilt_state.new_invoice_status)
-                                     else:
-                                         db_service.update_order(rebuilt_state)
-                                 elif not any([rebuilt_state.is_explanation_request, rebuilt_state.is_secretary_query, rebuilt_state.is_payment_query]):
-                                     db_service.append_order(rebuilt_state)
-
-                                 # 4. Final Reply
-                                 print(f"[SEND] Final response for {sender_phone}: {rebuilt_state.raw_message[:50]}...")
-                                 whatsapp_service.send_text_message(sender_phone, rebuilt_state.raw_message)
-                                 
-                                 # Clear state as the task is finished
-                                 memory_service.clear_state(sender_phone)
-
-                        except Exception as e:
-                            error_trace = traceback.format_exc()
-                            print(f"[ERROR] Failed Webhook execution sequence: {e}")
-                            print(error_trace)
-                            
-                            # NOTIFY the user about the failure (Helpful for debugging)
-                            error_msg = f"⚠️ *Internal Error:* {str(e)}\n\nCheck logs for details."
-                            whatsapp_service.send_text_message(sender_phone, error_msg)
+                        # Add WhatsApp message processing to background tasks
+                        background_tasks.add_task(process_webhook_message, sender_phone, text_body)
     
     return {"status": "received"}
 

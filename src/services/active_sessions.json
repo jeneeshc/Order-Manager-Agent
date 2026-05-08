@@ -1,1 +1,35 @@
-{}
+{
+    "test_user_failure": {
+        "sender_id": "test_user_failure",
+        "raw_message": "Hello Boss! \ud83c\udf38 I have successfully captured the details for the new order from **Anna**. \n\nHere is the information I\u2019ve gathered:\n\n\ud83e\uddf5 **Material:** Saree\n\ud83e\udea1 **Stitches:** 100,000\n\ud83c\udd94 **Order ID:** New Order\n\ud83d\udcb0 **Total Cost:** Rs Pending\n\ud83d\udcc5 **Est. Completion:** Pending\n\nThe details have been saved, and I will update you as soon as the invoicing and timeline are finalized! \u2728",
+        "customer_name": "Anna",
+        "customer_id": "1002",
+        "fabric_type": "Saree",
+        "embroidery_type": null,
+        "stitch_count": 100000,
+        "quantity": 5,
+        "requested_delivery_date": null,
+        "order_id": null,
+        "estimated_completion_date": null,
+        "machine_assigned": null,
+        "aggregated_reasoning": "\n[Supervisor]: Decided to route to collector because The user is providing details for a new order. According to the decision rules, the 'collector' agent must be prioritized first to extract and validate the order information..\n\n[Collector Agent]: Customer='Anna', Stitches=100000, Fabric=Saree, Style=None.\n\n[Supervisor]: Decided to route to END because The order is missing the 'Embroidery' type. Per Rule 1, when 'Missing Info? True', I must route to END to allow the system to prompt the Boss for the missing information..\n",
+        "total_cost_rs": null,
+        "media_assets": [],
+        "invoice_status": "pending",
+        "current_agent": "OrderCollector",
+        "is_missing_info": true,
+        "missing_fields_prompt": "Please provide the embroidery type and requested delivery date.",
+        "is_status_update": false,
+        "new_invoice_status": null,
+        "is_explanation_request": false,
+        "is_payment_query": false,
+        "is_duplicate_confirmed": false,
+        "is_secretary_query": false,
+        "next_step": "END",
+        "worker_feedback": "",
+        "final_reply": null,
+        "is_field_override": false,
+        "override_field": null,
+        "override_value": null
+    }
+}
