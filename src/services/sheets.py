@@ -1,9 +1,12 @@
 import os
 import uuid
 import datetime
+import pytz
 import google.auth
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+
+IST = pytz.timezone("Asia/Kolkata")
 
 class GoogleSheetsService:
     """Wrapper for writing outputs directly to Boss's spreadsheet."""
@@ -37,7 +40,7 @@ class GoogleSheetsService:
         
         # New column order (A-M) matching workflow progression
         values = [[
-            datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),  # A: Order Date
+            datetime.datetime.now(IST).strftime("%Y-%m-%d %H:%M"),  # A: Order Date
             order_id,                                               # B: Order ID
             state.customer_id or "Unknown",                        # C: Customer ID
             state.sender_id,                                        # D: Phone
@@ -172,7 +175,7 @@ class GoogleSheetsService:
         Calculates when 'Ricoma' and 'Aakruthi' physically become free by mathematically 
         parsing all open, incomplete backlogged orders natively from the Google Sheet.
         """
-        availability = { "Ricoma": datetime.datetime.now(), "Aakruthi": datetime.datetime.now() }
+        availability = { "Ricoma": datetime.datetime.now(IST).replace(tzinfo=None), "Aakruthi": datetime.datetime.now(IST).replace(tzinfo=None) }
         if not self.service: 
             return availability
             
@@ -375,7 +378,7 @@ class GoogleSheetsService:
             ).execute()
 
             # Step 4: Append override audit note to Col L (reasoning)
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+            timestamp = datetime.datetime.now(IST).strftime("%Y-%m-%d %H:%M")
             override_note = f"\n[Override - {timestamp}]: Boss manually changed '{field}' to '{new_value}'."
             updated_k = existing_k + override_note
             self.service.spreadsheets().values().update(
@@ -507,7 +510,7 @@ class GoogleSheetsService:
             ).execute()
             rows = result.get('values', [])
             
-            cutoff = datetime.datetime.now() - datetime.timedelta(hours=24)
+            cutoff = datetime.datetime.now(IST).replace(tzinfo=None) - datetime.timedelta(hours=24)
             
             for i, row in enumerate(rows):
                 if i == 0 or len(row) < 7: continue  # skip header or short rows
@@ -559,7 +562,7 @@ class GoogleSheetsService:
         """
         if not self.service: return {}
         
-        today = datetime.datetime.now().date()
+        today = datetime.datetime.now(IST).date()
         today_str = today.strftime("%Y-%m-%d")
         seven_days_ago = today - datetime.timedelta(days=7)
         

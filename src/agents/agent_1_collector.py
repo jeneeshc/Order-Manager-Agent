@@ -173,7 +173,21 @@ class OrderCollectorAgent:
         if not state.customer_name or not state.fabric_type or not state.embroidery_type or not state.stitch_count:
             print(f"[{self.name}] Required parameters missing. Returning to WhatsApp.")
             state.is_missing_info = True
-            state.missing_fields_prompt = extraction.missing_fields_prompt or "Could you please share the fabric type, embroidery style, stitch count, and your name?"
+            
+            missing_items = []
+            if not state.customer_name: missing_items.append("customer name")
+            if not state.fabric_type: missing_items.append("fabric type")
+            if not state.embroidery_type: missing_items.append("embroidery style")
+            if not state.stitch_count: missing_items.append("stitch count")
+            
+            if len(missing_items) == 1:
+                missing_str = missing_items[0]
+            elif len(missing_items) == 2:
+                missing_str = f"{missing_items[0]} and {missing_items[1]}"
+            else:
+                missing_str = ", ".join(missing_items[:-1]) + f", and {missing_items[-1]}"
+            
+            state.missing_fields_prompt = f"Please provide the {missing_str} to complete the order."
         else:
             # We have all info — check for duplicates!
             if not state.is_duplicate_confirmed and not extraction.referenced_order_id:

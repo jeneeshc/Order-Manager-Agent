@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request, Query, Response, BackgroundTasks
 from dotenv import load_dotenv
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+import threading
 
 # Internal imports
 from src.services.whatsapp import WhatsAppService
@@ -95,9 +96,21 @@ async def verify_webhook(
         return Response(content=challenge, media_type="text/plain")
     return Response(content="Forbidden", status_code=403)
 
+# Global locks dictionary for synchronizing per-user webhook processing
+user_locks = {}
+user_locks_lock = threading.Lock()
+
+def get_user_lock(phone: str) -> threading.Lock:
+    with user_locks_lock:
+        if phone not in user_locks:
+            user_locks[phone] = threading.Lock()
+        return user_locks[phone]
+
 def process_webhook_message(sender_phone: str, text_body: str):
     """Processes the incoming WhatsApp message in the background."""
-    try:
+    lock = get_user_lock(sender_phone)
+    with lock:
+        try:
         # 1. Load context from Persistence
         prior_state_dict = memory_service.get_state(sender_phone)
         
@@ -138,14 +151,14 @@ def process_webhook_message(sender_phone: str, text_body: str):
              # Clear state as the task is finished
              memory_service.clear_state(sender_phone)
 
-    except Exception as e:
-        error_trace = traceback.format_exc()
-        print(f"[ERROR] Failed Webhook execution sequence: {e}")
-        print(error_trace)
-        
-        # NOTIFY the user about the failure (Helpful for debugging)
-        error_msg = f"⚠️ *Internal Error:* {str(e)}\n\nCheck logs for details."
-        whatsapp_service.send_text_message(sender_phone, error_msg)
+        except Exception as e:
+            error_trace = traceback.format_exc()
+            print(f"[ERROR] Failed Webhook execution sequence: {e}")
+            print(error_trace)
+            
+            # NOTIFY the user about the failure (Helpful for debugging)
+            error_msg = f"⚠️ *Internal Error:* {str(e)}\n\nCheck logs for details."
+            whatsapp_service.send_text_message(sender_phone, error_msg)
 
 @app.post("/webhook")
 async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
