@@ -9,7 +9,7 @@ class OrderExtractionModel(BaseModel):
     """Structured extraction of order details from WhatsApp messages."""
     customer_name: Optional[str] = Field(None, description="Customer name.")
     fabric_type: Optional[str] = Field(None, description="Material/fabric type.")
-    embroidery_type: Optional[str] = Field(None, description="Embroidery style/type.")
+    embroidery_type: Optional[str] = Field(None, description="Embroidery style/type. Do NOT include garment type (e.g., Kurty).")
     stitch_count: Optional[int] = Field(None, description="Total stitch count (numeric).")
     quantity: Optional[int] = Field(None, description="Total number of items (numeric).")
     requested_delivery_date: Optional[str] = Field(None, description="Delivery date/day.")
