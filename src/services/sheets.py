@@ -643,8 +643,11 @@ class GoogleSheetsService:
             holidays = self.get_holidays()
             next_seven = today + datetime.timedelta(days=7)
             
-            if today in holidays:
-                data["holiday_status"] = "TODAY IS A HOLIDAY!"
+            if today in holidays or today.weekday() in (5, 6):
+                if today.weekday() in (5, 6):
+                    data["holiday_status"] = "TODAY IS A HOLIDAY! (Weekend)"
+                else:
+                    data["holiday_status"] = "TODAY IS A HOLIDAY!"
                 
             for h in holidays:
                 if today < h <= next_seven:

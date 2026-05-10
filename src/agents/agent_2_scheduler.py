@@ -46,8 +46,8 @@ class ProductionSchedulerAgent:
         while days_added < days_required:
             current_date += datetime.timedelta(days=1)
             
-            # Condition A: Skip Sundays (Weekend off)
-            if current_date.weekday() == 6:
+            # Condition A: Skip Saturdays and Sundays (Weekend off)
+            if current_date.weekday() in (5, 6):
                 continue
                 
             # Condition B: Skip Calendar API Holidays natively!
