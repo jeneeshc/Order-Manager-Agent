@@ -106,7 +106,7 @@ def get_user_lock(phone: str) -> threading.Lock:
             user_locks[phone] = threading.Lock()
         return user_locks[phone]
 
-def process_webhook_message(sender_phone: str, text_body: str):
+def process_webhook_message(sender_phone: str, text_body: str, interactive_payload: dict = None):
     """Processes the incoming WhatsApp message in the background."""
     lock = get_user_lock(sender_phone)
     with lock:
@@ -123,17 +123,39 @@ def process_webhook_message(sender_phone: str, text_body: str):
                 # Reset flags to force the Supervisor to re-evaluate the new message
                 initial_state.raw_message = text_body
                 initial_state.is_missing_info = False
+                initial_state.send_order_form = False
                 initial_state.next_step = "supervisor"
             else:
                 print(f"[MEM] Fresh session for {sender_phone}")
                 initial_state = AgentState(raw_message=text_body, sender_id=sender_phone)
+            
+            # 1.5 Handle Form Submission Bypass
+            if interactive_payload:
+                initial_state.customer_name = interactive_payload.get("customer_name")
+                initial_state.fabric_type = interactive_payload.get("fabric_type")
+                # Combine garment type into embroidery type to match existing state logic
+                garment = interactive_payload.get("garment_type", "")
+                embroidery = interactive_payload.get("embroidery_style", "")
+                initial_state.embroidery_type = f"{embroidery} {garment}".strip()
+                initial_state.stitch_count = int(interactive_payload.get("stitch_count", 0))
+                initial_state.requested_delivery_date = str(interactive_payload.get("delivery_date"))
+                initial_state.raw_message = "I have filled out the order form."
+                print(f"[WEBHOOK] Injected native Flow data into state for {sender_phone}")
             
             # 2. Execute the LangGraph chain (with Guard Rails)
             final_state_dict = cjs_bot.invoke(initial_state, config={"recursion_limit": 20})
             rebuilt_state = AgentState(**final_state_dict)
             
             # 3. Decision logic
-            if rebuilt_state.is_missing_info:
+            if rebuilt_state.send_order_form:
+                 # Trigger native WhatsApp Flow
+                 flow_id = os.getenv("WHATSAPP_FLOW_ID")
+                 if flow_id:
+                     whatsapp_service.send_flow_message(sender_phone, flow_id)
+                 else:
+                     whatsapp_service.send_text_message(sender_phone, "Error: Flow ID missing from config.")
+                 memory_service.save_state(sender_phone, rebuilt_state)
+            elif rebuilt_state.is_missing_info:
                  # Bot needs more info (from Collector worker)
                  whatsapp_service.send_text_message(sender_phone, rebuilt_state.missing_fields_prompt)
                  memory_service.save_state(sender_phone, rebuilt_state)
@@ -176,7 +198,23 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
                 if "messages" in value:
                     for message in value["messages"]:
                         sender_phone = message.get("from")
-                        text_body = message.get("text", {}).get("body", "")
+                        msg_type = message.get("type")
+                        
+                        interactive_payload = None
+                        text_body = ""
+
+                        if msg_type == "text":
+                            text_body = message.get("text", {}).get("body", "")
+                        elif msg_type == "interactive":
+                            interactive = message.get("interactive", {})
+                            if interactive.get("type") == "nfm_reply":
+                                response_json = interactive.get("nfm_reply", {}).get("response_json", "{}")
+                                import json
+                                try:
+                                    interactive_payload = json.loads(response_json)
+                                    text_body = "[FORM_SUBMITTED]"
+                                except json.JSONDecodeError:
+                                    pass
                         
                         if not text_body:
                             continue
@@ -187,7 +225,7 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
                         whatsapp_service.send_text_message(sender_phone, "Working on your request, Boss... 🔄")
                         
                         # Add WhatsApp message processing to background tasks
-                        background_tasks.add_task(process_webhook_message, sender_phone, text_body)
+                        background_tasks.add_task(process_webhook_message, sender_phone, text_body, interactive_payload)
     
     return {"status": "received"}
 

@@ -29,7 +29,49 @@ class WhatsAppService:
         except Exception as e:
             print(f"[WhatsApp] Failed to send message: {e}")
             return False
-
+    def send_flow_message(self, recipient_number: str, flow_id: str, message_text: str = "Please fill out the form below to proceed:"):
+        """Sends an interactive WhatsApp Flow message."""
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": recipient_number,
+            "type": "interactive",
+            "interactive": {
+                "type": "flow",
+                "header": {
+                    "type": "text",
+                    "text": "Order Creation"
+                },
+                "body": {
+                    "text": message_text
+                },
+                "footer": {
+                    "text": "CJS Designs"
+                },
+                "action": {
+                    "name": "flow",
+                    "parameters": {
+                        "flow_message_version": "3",
+                        "flow_token": "CJS_ORDER_FLOW",
+                        "flow_id": flow_id,
+                        "flow_cta": "Open Form",
+                        "flow_action": "navigate",
+                        "flow_action_payload": {
+                            "screen": "ORDER_SCREEN"
+                        }
+                    }
+                }
+            }
+        }
+        try:
+            response = requests.post(self.base_url, headers=self.headers, json=payload)
+            response.raise_for_status()
+            print(f"[WhatsApp] Sent flow message to {recipient_number}: {response.status_code}")
+            return True
+        except Exception as e:
+            print(f"[WhatsApp] Failed to send flow message: {e}")
+            if hasattr(e, 'response') and e.response:
+                print(f"[WhatsApp] Error detail: {e.response.text}")
+            return False
     def download_media(self, media_id: str):
         """
         Resolves and downloads a WhatsApp media file (e.g. voice note) by its media_id.

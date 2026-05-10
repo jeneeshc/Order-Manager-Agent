@@ -180,14 +180,19 @@ class OrderCollectorAgent:
             if not state.embroidery_type: missing_items.append("embroidery style")
             if not state.stitch_count: missing_items.append("stitch count")
             
-            if len(missing_items) == 1:
-                missing_str = missing_items[0]
-            elif len(missing_items) == 2:
-                missing_str = f"{missing_items[0]} and {missing_items[1]}"
+            if len(missing_items) == 4:
+                print(f"[{self.name}] All parameters missing. Triggering native WhatsApp Flow Form.")
+                state.send_order_form = True
+                state.missing_fields_prompt = "Triggering form..."
             else:
-                missing_str = ", ".join(missing_items[:-1]) + f", and {missing_items[-1]}"
-            
-            state.missing_fields_prompt = f"Please provide the {missing_str} to complete the order."
+                if len(missing_items) == 1:
+                    missing_str = missing_items[0]
+                elif len(missing_items) == 2:
+                    missing_str = f"{missing_items[0]} and {missing_items[1]}"
+                else:
+                    missing_str = ", ".join(missing_items[:-1]) + f", and {missing_items[-1]}"
+                
+                state.missing_fields_prompt = f"Please provide the {missing_str} to complete the order."
         else:
             # We have all info — check for duplicates!
             if not state.is_duplicate_confirmed and not extraction.referenced_order_id:

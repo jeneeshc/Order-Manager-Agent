@@ -45,7 +45,7 @@ class AgentState(BaseModel):
     is_payment_query: bool = Field(default=False)
     is_duplicate_confirmed: bool = Field(default=False)
     is_secretary_query: bool = Field(default=False)
-    
+    send_order_form: bool = Field(default=False)    
     # supervisor-led orchestration fields
     next_step: str = Field(default="supervisor")
     worker_feedback: str = Field(default="")
