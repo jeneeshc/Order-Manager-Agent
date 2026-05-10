@@ -27,6 +27,8 @@ class SupervisorAgent:
         2. Decides which specialized agent (worker) needs to run next.
         3. If no further actions are needed, sets next_step="END".
         """
+        state.hop_count += 1
+        
         prompt = f"""
         You are the Head Supervisor for Siny's Embroidery Business (CJS Designs).
         Your job is to coordinate different specialist agents to fulfill a request.
@@ -40,6 +42,7 @@ class SupervisorAgent:
         - Embroidery: {state.embroidery_type or 'Unknown'}
         - Stitches: {state.stitch_count or 'Unknown'}
         - Order ID: {state.order_id or 'New Order'}
+        - Est. Completion: {state.estimated_completion_date or 'Unknown'}
         - Missing Info? {state.is_missing_info}
         - Estimates Done? {state.total_cost_rs is not None}
         - Secretarial/Task Query? {state.is_secretary_query}
@@ -55,14 +58,25 @@ class SupervisorAgent:
         
         DECISION RULES:
         1. CRITICAL: If 'Missing Info? True' (is_missing_info), you MUST route to 'END' immediately. This allows the system to send the missing information prompt to Siny. Do NOT route to collector again if information is already flagged as missing.
-        2. If 'Missing Info? False' or this is a fresh user message, ALWAYS prioritize routing to 'collector' first if an order is involved.
+        2. If 'Missing Info? False' AND this is an order request AND Customer, Fabric, Embroidery, and Stitches are currently 'Unknown', route to 'collector'.
         3. If Siny asks for a daily summary, work schedule, or "what to do today", route to 'secretary'.
-        4. Proceed to 'scheduler' and 'estimator' only after 'collector' confirms ALL required info (is_missing_info=False).
-        5. If all business logic (scheduling, cost, invoicing) is complete or it's a simple query already answered, route to 'END'.
-        6. CRITICAL: If 'Final Reply Ready? Yes', you MUST route to 'END' immediately to deliver the message to Siny.
+        4. If all required order info is present (Customer, Fabric, Embroidery, Stitches are NOT 'Unknown') and scheduling hasn't been done (Est. Completion is 'Unknown'), route to 'scheduler'.
+        5. If scheduling is done but costs aren't calculated, route to 'estimator'.
+        6. If all business logic (scheduling, cost, invoicing) is complete or it's a simple query already answered, route to 'END'.
+        7. CRITICAL: If 'Final Reply Ready? Yes', you MUST route to 'END' immediately to deliver the message to Siny.
         """
         
-        decision = self.router.invoke(prompt)
+        from src.agents.agent_0_supervisor import SupervisorOutput
+        
+        if state.hop_count >= 6:
+            print(f"[{self.name}] Safety cutoff reached! Forcing END.")
+            state.final_reply = "⚠️ *System Safety Check Triggered*\n\nThe request took too many steps to process. I aborted it to save your resources. Please check the logs or try rephrasing your request."
+            decision = SupervisorOutput(next_step="END", reasoning="Hop count limit exceeded.", internal_thought="Aborting infinite loop.")
+        else:
+            decision = self.router.invoke(prompt)
+            if decision is None:
+                print(f"[{self.name}] Router LLM returned None. Defaulting to 'END' to prevent crash.")
+                decision = SupervisorOutput(next_step="END", reasoning="Safety filter blocked or parsing failed.", internal_thought="Error")
         print(f"[{self.name}] Router Decision: {decision.next_step} ({decision.reasoning})")
         
         # If the task is finished, send the final response to Siny.
@@ -84,7 +98,7 @@ class SupervisorAgent:
                 Based on the following aggregated work from your specialists, write a single final WhatsApp message.
                 
                 WORK REASONING:
-                {state.aggregated_reasoning}
+                {state.aggregated_reasoning[-1000:] if len(state.aggregated_reasoning) > 1000 else state.aggregated_reasoning}
                 
                 STATE DETAILS:
                 - Order ID: {state.order_id or 'New Order'}

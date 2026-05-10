@@ -21,7 +21,7 @@ class OrderExtractionModel(BaseModel):
     override_value: Optional[str] = Field(None, description="New value for the override.")
     is_payment_query: bool = Field(False, description="True if asking about payments/unpaid orders.")
     is_secretary_query: bool = Field(False, description="True if asking for a daily summary, work update, or tasks for today (secretary function).")
-    confirm_duplicate: bool = Field(False, description="True if confirming a duplicate order.")
+    confirm_duplicate: bool = Field(False, description="True ONLY if the bot previously warned about a similar order and the user explicitly replied 'create new' or 'yes'. False for all fresh orders.")
     is_missing_info: bool = Field(False, description="True if info is missing and not an update/query.")
     missing_fields_prompt: Optional[str] = Field(None, description="Helpful prompt for missing fields.")
 
@@ -192,13 +192,19 @@ class OrderCollectorAgent:
             # We have all info — check for duplicates!
             if not state.is_duplicate_confirmed and not extraction.referenced_order_id:
                 db = GoogleSheetsService()
-                is_duplicate = db.check_duplicate_order(
-                    state.customer_name, state.sender_id, state.fabric_type, state.embroidery_type, state.stitch_count
+                similar_order = db.find_similar_order(
+                    state.customer_id or state.customer_name, state.fabric_type, state.embroidery_type, state.stitch_count
                 )
-                if is_duplicate:
-                    print(f"[{self.name}] Duplicate detected! Prompting Siny for confirmation.")
+                if similar_order:
+                    print(f"[{self.name}] Similar order detected! Prompting Boss for update vs create new choice.")
                     state.is_missing_info = True
-                    state.missing_fields_prompt = f"It looks like an identical order was already placed by {state.customer_name} today ({state.stitch_count} stitches of {state.embroidery_type} on {state.fabric_type}). Are you sure you want to duplicate it? Please say 'Yes' to confirm."
+                    o_id = similar_order.get("order_id", "Unknown")
+                    o_date = similar_order.get("date", "recently")
+                    o_stitch = similar_order.get("stitches", state.stitch_count)
+                    o_style = similar_order.get("style", state.embroidery_type)
+                    o_fabric = similar_order.get("fabric", state.fabric_type)
+                    
+                    state.missing_fields_prompt = f"I found a ~90% similar order for {state.customer_name} from {o_date}: Order *{o_id}* ({o_stitch} stitches of {o_style} on {o_fabric}).\n\nWould you like to update this existing order (reply *'update {o_id}'*), or create a brand new one (reply *'create new'*)"
                     return state
 
             # Passes all checks

@@ -36,6 +36,7 @@ class AgentState(BaseModel):
     current_agent: str = Field(default="OrderCollector")
     is_missing_info: bool = Field(default=False)
     missing_fields_prompt: Optional[str] = None
+    hop_count: int = Field(default=0)
     
     # State overrides for Native Database Mutations & RAG Audits
     is_status_update: bool = Field(default=False)

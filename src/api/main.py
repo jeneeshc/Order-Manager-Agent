@@ -111,6 +111,9 @@ def process_webhook_message(sender_phone: str, text_body: str):
     lock = get_user_lock(sender_phone)
     with lock:
         try:
+            # 0. Truncate user input to prevent token overload
+            text_body = text_body[:1500]
+            
             # 1. Load context from Persistence
             prior_state_dict = memory_service.get_state(sender_phone)
             
@@ -125,8 +128,8 @@ def process_webhook_message(sender_phone: str, text_body: str):
                 print(f"[MEM] Fresh session for {sender_phone}")
                 initial_state = AgentState(raw_message=text_body, sender_id=sender_phone)
             
-            # 2. Execute the LangGraph chain
-            final_state_dict = cjs_bot.invoke(initial_state)
+            # 2. Execute the LangGraph chain (with Guard Rails)
+            final_state_dict = cjs_bot.invoke(initial_state, config={"recursion_limit": 8})
             rebuilt_state = AgentState(**final_state_dict)
             
             # 3. Decision logic

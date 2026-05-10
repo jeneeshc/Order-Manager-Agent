@@ -497,20 +497,30 @@ class GoogleSheetsService:
             print(f"[SheetsAPI] get_all_customers_map failed: {e}")
             return mapping
 
-    def check_duplicate_order(self, customer_id: str, phone: str, fabric_type: str, embroidery_type: str, stitch_count: int) -> bool:
+    def find_similar_order(self, customer_id: str, fabric_type: str, embroidery_type: str, stitch_count: int) -> dict | None:
         """
-        Scans recent orders (last 24 hours) for an identical match based on:
-        Customer ID, Phone, Fabric, Embroidery Type, and Stitch Count.
-        Returns True if a probable duplicate is found.
+        Scans recent orders (last 7 days) for a ~90% similar match based on:
+        Customer ID, Fabric, Embroidery Type, and Stitch Count (10% variance allowed).
+        Does NOT check phone number.
+        Returns a dictionary of the most similar order's details if found, else None.
         """
-        if not self.service or not customer_id: return False
+        if not self.service or not customer_id: return None
         try:
             result = self.service.spreadsheets().values().get(
                 spreadsheetId=self.spreadsheet_id, range="A:O"
             ).execute()
             rows = result.get('values', [])
             
-            cutoff = datetime.datetime.now(IST).replace(tzinfo=None) - datetime.timedelta(hours=24)
+            cutoff = datetime.datetime.now(IST).replace(tzinfo=None) - datetime.timedelta(days=7)
+            
+            c_id = str(customer_id).strip().lower()
+            c_fabric = str(fabric_type).strip().lower() if fabric_type else ""
+            c_style = str(embroidery_type).strip().lower() if embroidery_type else ""
+            
+            try:
+                c_stitch = int(stitch_count) if stitch_count else 0
+            except ValueError:
+                c_stitch = 0
             
             for i, row in enumerate(rows):
                 if i == 0 or len(row) < 7: continue  # skip header or short rows
@@ -524,32 +534,48 @@ class GoogleSheetsService:
                 except ValueError:
                     pass
                 
-                # Compare fields safely with null-handling
+                r_id = str(row[1]).strip() if len(row) > 1 else ""
                 r_customer = str(row[2]).strip().lower() if len(row) > 2 else ""
-                r_phone    = str(row[3]).strip() if len(row) > 3 else ""
                 r_fabric   = str(row[4]).strip().lower() if len(row) > 4 else ""
                 r_style    = str(row[5]).strip().lower() if len(row) > 5 else ""
-                r_stitch   = str(row[6]).strip() if len(row) > 6 else ""
                 
-                c_id = str(customer_id).strip().lower() if customer_id else ""
-                c_phone = str(phone).strip() if phone else ""
-                c_fabric = str(fabric_type).strip().lower() if fabric_type else ""
-                c_style = str(embroidery_type).strip().lower() if embroidery_type else ""
-                c_stitch = str(stitch_count).strip() if stitch_count else ""
+                try:
+                    r_stitch = int(str(row[6]).strip()) if len(row) > 6 else 0
+                except ValueError:
+                    r_stitch = 0
                 
-                if (r_customer == c_id and
-                    r_phone    == c_phone and
-                    r_fabric   == c_fabric and
-                    r_style    == c_style and
-                    r_stitch   == c_stitch):
-                    print(f"[SheetsAPI] Duplicate detected from {order_dt} for {customer_id}")
-                    return True
+                # Calculate Similarity
+                # Customer ID must match exactly
+                if r_customer != c_id:
+                    continue
                     
-            return False
+                # Fabric and Style must match
+                if r_fabric != c_fabric or r_style != c_style:
+                    continue
+                
+                # Stitch count variance (10%)
+                if c_stitch > 0:
+                    variance = abs(r_stitch - c_stitch) / float(c_stitch)
+                else:
+                    variance = 0 if r_stitch == 0 else 1.0
+                    
+                print(f"[DEBUG SheetsAPI] Comparing with order {r_id}: r_customer={r_customer}, r_fabric={r_fabric}, r_style={r_style}, r_stitch={r_stitch}. Variance={variance}")
+                    
+                if variance <= 0.10:
+                    print(f"[SheetsAPI] ~90% Similar order detected from {order_dt} for {customer_id} (Variance: {variance*100:.1f}%)")
+                    return {
+                        "order_id": r_id,
+                        "date": date_str,
+                        "fabric": str(row[4]).strip() if len(row) > 4 else "Unknown",
+                        "style": str(row[5]).strip() if len(row) > 5 else "Unknown",
+                        "stitches": r_stitch
+                    }
+                    
+            return None
             
         except Exception as e:
-            print(f"[SheetsAPI] Duplicate check failed: {e}")
-            return False
+            print(f"[SheetsAPI] Similar order check failed: {e}")
+            return None
 
     def get_secretary_data(self) -> dict:
         """
