@@ -623,7 +623,8 @@ class GoogleSheetsService:
                         "id": order_id,
                         "customer": row[2] if len(row) > 2 else "Unknown",
                         "fabric": row[4] if len(row) > 4 else "Unknown",
-                        "cost": row[9] if len(row) > 9 else "Unknown"
+                        "cost": row[9] if len(row) > 9 else "Unknown",
+                        "machine": row[7] if len(row) > 7 else "Unknown"
                     })
                 
                 # Pending invoices > 7 days

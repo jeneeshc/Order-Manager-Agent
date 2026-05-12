@@ -33,7 +33,7 @@ class SecretaryAgent:
         TASK:
         Write a friendly, professional, and concise WhatsApp message to Siny.
         - Start with a warm greeting addressing her as 'Boss'.
-        - Summarise what needs to be completed TODAY (not tomorrow).
+        - Summarise what needs to be completed TODAY (not tomorrow). For each order, explicitly mention the machine assigned (e.g. 'Ricoma' or 'Aakruthi').
         - Gently remind her of old pending invoices if any.
         - Mention any holidays (today or upcoming).
         - Include the specific reminders from the Reminders sheet.
