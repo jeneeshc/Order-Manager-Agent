@@ -126,6 +126,17 @@ def test_supervisor_routing_for_invoicing():
     final_state = supervisor.process(state_update)
     assert final_state.next_step == "invoice"
 
+    # Termination case (when final_reply is set, it must route to END even if invoicing flag is True)
+    state_terminated = AgentState(
+        raw_message="invoicing done for Ameera",
+        is_invoicing_done_update=True,
+        invoicing_done_customer="Ameera",
+        final_reply="Invoicing completed, Boss!"
+    )
+    
+    final_state_term = supervisor.process(state_terminated)
+    assert final_state_term.next_step == "END"
+
 def test_invoicing_agent_pending_report():
     """Test that InvoicingAgent generates a correctly formatted pending report."""
     agent = InvoicingAgent()

@@ -83,7 +83,7 @@ class SupervisorAgent:
         reasoning = decision.reasoning
 
         # Force routing to invoice agent if invoicing queries/updates are detected
-        if state.is_pending_invoicing_query or state.is_invoicing_done_update:
+        if (state.is_pending_invoicing_query or state.is_invoicing_done_update) and not state.final_reply:
             next_step = "invoice"
             reasoning = "Message is an invoicing query or status update, routing to Invoicing Agent."
         
@@ -113,6 +113,11 @@ class SupervisorAgent:
                 print(f"[{self.name}] Guardrail Triggered! Missing mandatory fields: {missing_fields}. Overriding next_step to 'collector'.")
                 next_step = "collector"
                 reasoning = f"Guardrail overridden to collector due to missing required fields: {', '.join(missing_fields)}"
+
+        # If a final reply has already been formulated by a worker agent, force termination
+        if state.final_reply:
+            next_step = "END"
+            reasoning = "Final reply is ready, routing to END."
 
         print(f"[{self.name}] Supervisor Routing Decision: {next_step} (original: {decision.next_step}, reasoning: {reasoning})")
         
