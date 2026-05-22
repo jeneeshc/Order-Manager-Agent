@@ -602,6 +602,8 @@ class GoogleSheetsService:
         }
         
         try:
+            customer_map = self.get_all_customers_map()
+            
             # 1. Fetch Orders (Sheet1)
             result = self.service.spreadsheets().values().get(
                 spreadsheetId=self.spreadsheet_id, range="A:K"
@@ -619,9 +621,11 @@ class GoogleSheetsService:
                 
                 # Orders due today
                 if completion_date == today_str:
+                    cust_id = row[2].strip() if len(row) > 2 else "Unknown"
+                    cust_name = customer_map.get(cust_id, cust_id)
                     data["orders_due_today"].append({
                         "id": order_id,
-                        "customer": row[2] if len(row) > 2 else "Unknown",
+                        "customer": cust_name,
                         "fabric": row[4] if len(row) > 4 else "Unknown",
                         "cost": row[9] if len(row) > 9 else "Unknown",
                         "machine": row[7] if len(row) > 7 else "Unknown"
@@ -632,9 +636,13 @@ class GoogleSheetsService:
                     try:
                         order_dt = datetime.datetime.strptime(order_date_str, "%Y-%m-%d").date()
                         if order_dt < seven_days_ago:
+                            cust_id = row[2].strip() if len(row) > 2 else "Unknown"
+                            cust_name = customer_map.get(cust_id, cust_id)
                             data["pending_invoices_old"].append({
                                 "id": order_id,
+                                "customer": cust_name,
                                 "date": order_date_str,
+                                "completion_date": completion_date,
                                 "cost": row[9] if len(row) > 9 else "Unknown"
                             })
                     except ValueError:

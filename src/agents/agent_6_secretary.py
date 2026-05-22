@@ -33,8 +33,19 @@ class SecretaryAgent:
         TASK:
         Write a friendly, professional, and concise WhatsApp message to Siny.
         - Start with a warm greeting addressing her as 'Boss'.
-        - Summarise what needs to be completed TODAY (not tomorrow). For each order, explicitly mention the machine assigned (e.g. 'Ricoma' or 'Aakruthi').
-        - Gently remind her of old pending invoices if any.
+        - Summarise what needs to be completed TODAY (not tomorrow). For each order, explicitly include the Order ID, Customer Name (from 'customer'), Fabric Type (from 'fabric'), Machine Assigned (from 'machine', e.g. 'Ricoma' or 'Aakruthi'), and Cost (from 'cost').
+          Format each order like:
+          *   [Order ID] ([Fabric]) for [Customer Name] — 🧵 Machine: [Machine] (Cost: [Cost])
+        - Gently remind her of old pending invoices if any. For each pending invoice, include:
+          * The Order ID
+          * The Customer Name (from 'customer')
+          * The Cost/Amount (from 'cost', e.g. Rs 1360.0)
+          * The Order Date (from 'date', e.g. May 10)
+          * The Completion Date (from 'completion_date', if available, e.g. Completed: May 12)
+          Format each pending invoice like:
+          *   [Order ID] for [Customer Name] ([Cost], [Order Date], Completed: [Completion Date])
+          If the completion date is not available, omit the completion date part, e.g.:
+          *   [Order ID] for [Customer Name] ([Cost], [Order Date])
         - Mention any holidays (today or upcoming).
         - Include the specific reminders from the Reminders sheet.
         - End with an encouraging note.

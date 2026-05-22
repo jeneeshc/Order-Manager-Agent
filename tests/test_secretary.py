@@ -30,11 +30,12 @@ def test_secretary_report_generation():
     mock_data = {
         "today": "2026-03-29",
         "orders_due_today": [
-            {"id": "CJS-101", "customer": "Alice", "fabric": "Silk", "cost": "1500"},
-            {"id": "CJS-102", "customer": "Bob", "fabric": "Cotton", "cost": "800"}
+            {"id": "CJS-101", "customer": "Alice", "fabric": "Silk", "cost": "1500", "machine": "Ricoma"},
+            {"id": "CJS-102", "customer": "Bob", "fabric": "Cotton", "cost": "800", "machine": "Aakruthi"}
         ],
         "pending_invoices_old": [
-            {"id": "CJS-090", "date": "2026-03-10", "cost": "3000"}
+            {"id": "CJS-090", "customer": "Charlie", "date": "2026-03-10", "completion_date": "2026-03-12", "cost": "3000"},
+            {"id": "CJS-091", "customer": "Diana", "date": "2026-03-11", "completion_date": "", "cost": "1200"}
         ],
         "holiday_status": None,
         "upcoming_holidays": ["02-April-2026"],
