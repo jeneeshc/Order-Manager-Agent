@@ -21,6 +21,8 @@ class InvoicingAgent:
             if not pending_orders:
                 state.final_reply = "No orders pending for invoicing, Boss! 🎉"
             else:
+                from src.services.utils import format_as_monospace_table
+                
                 report_lines = ["Here are the orders pending for invoicing, Boss! 📋\n"]
                 grand_total = 0.0
                 
@@ -28,6 +30,8 @@ class InvoicingAgent:
                 for cname in sorted(pending_orders.keys()):
                     report_lines.append(f"👤 *{cname}*")
                     customer_total = 0.0
+                    table_rows = []
+                    
                     for o in pending_orders[cname]:
                         # Parse cost (e.g. "Rs 560.0" -> 560.0)
                         cost_str = o["cost"]
@@ -39,7 +43,11 @@ class InvoicingAgent:
                         grand_total += val
                         
                         desc = f"{o['fabric_type']} - {o['embroidery_type']}"
-                        report_lines.append(f"  • *{o['order_id']}* ({desc}): Rs {val:.2f}")
+                        table_rows.append([o['order_id'], desc, f"Rs {val:.2f}"])
+                    
+                    headers = ["Order ID", "Details", "Est. Cost"]
+                    table_str = format_as_monospace_table(headers, table_rows)
+                    report_lines.append(table_str)
                     report_lines.append(f"  *Total for {cname}:* Rs {customer_total:.2f}\n")
                 
                 report_lines.append(f"💵 *Grand Total:* Rs {grand_total:.2f}")

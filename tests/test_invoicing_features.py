@@ -174,6 +174,9 @@ def test_invoicing_agent_pending_report():
     assert "Total for Ameera:* Rs 1360.00" in final_state.final_reply
     assert "Total for Unknown:* Rs 80.18" in final_state.final_reply
     assert "Grand Total:* Rs 1440.18" in final_state.final_reply
+    
+    # Monospace formatting verification
+    assert "```" in final_state.final_reply
 
 def test_invoicing_agent_bulk_update_specific():
     """Test that InvoicingAgent handles bulk completion for a specific customer."""
@@ -219,7 +222,7 @@ def test_invoicing_agent_bulk_update_all():
 
 def test_full_pipeline_routing_for_pending_invoicing_report():
     """Test that the full workflow graph correctly routes a raw message to the invoicing agent and generates the report."""
-    from src.workflow.main_graph import cjs_bot
+    from src.workflow.main_graph import cjs_bot, supervisor, collector
     
     raw_query = "can you give me all pending orders for invoicing?"
     state = AgentState(raw_message=raw_query, sender_id="test_invoicing_pipeline")
@@ -230,20 +233,15 @@ def test_full_pipeline_routing_for_pending_invoicing_report():
         ]
     }
     
-    # Mock Sheets service
+    # Mock Sheets service and Agent Extractors/Routers
     with patch('src.agents.agent_5_invoicing.GoogleSheetsService') as MockSheetsForInvoicing, \
          patch('src.agents.agent_1_collector.GoogleSheetsService') as MockSheetsForCollector, \
-         patch('src.agents.agent_1_collector.ChatGoogleGenerativeAI') as MockCollectorLLM, \
-         patch('src.agents.agent_0_supervisor.ChatGoogleGenerativeAI') as MockSupervisorLLM:
+         patch.object(collector, 'extractor') as mock_collector_extractor, \
+         patch.object(supervisor, 'router') as mock_supervisor_router:
          
         # Mock Sheets instances
         mock_sheets_invoice = MockSheetsForInvoicing.return_value
         mock_sheets_invoice.get_orders_pending_invoicing.return_value = mock_orders
-        
-        # Mock LLM calls (Structured Output)
-        mock_collector_llm_inst = MockCollectorLLM.return_value
-        mock_collector_extractor = MagicMock()
-        mock_collector_llm_inst.with_structured_output.return_value = mock_collector_extractor
         
         # Return structured extraction with is_pending_invoicing_query=True
         mock_collector_extractor.invoke.return_value = OrderExtractionModel(
@@ -265,9 +263,11 @@ def test_full_pipeline_routing_for_pending_invoicing_report():
             confirm_duplicate=False
         )
         
-        mock_supervisor_llm_inst = MockSupervisorLLM.return_value
-        mock_supervisor_router = MagicMock()
-        mock_supervisor_llm_inst.with_structured_output.return_value = mock_supervisor_router
+        mock_supervisor_router.invoke.return_value = SupervisorOutput(
+            next_step="invoice",
+            internal_thought="Thought",
+            reasoning="Reasoning"
+        )
         
         # Invoke the graph
         final_state_dict = cjs_bot.invoke(state)
@@ -278,4 +278,25 @@ def test_full_pipeline_routing_for_pending_invoicing_report():
     assert "orders pending for invoicing, Boss!" in final_state.final_reply
     assert "Anna" in final_state.final_reply
     assert "CJS-12345" in final_state.final_reply
+    assert "```" in final_state.final_reply
 
+def test_collector_mark_as_completed_extraction():
+    """Test that collector correctly parses mark as completed intent."""
+    agent = OrderCollectorAgent()
+    state = AgentState(raw_message="mark CJS-12345 as complete", sender_id="123")
+    
+    mock_extraction = OrderExtractionModel(
+        referenced_order_id="CJS-12345",
+        mark_as_completed=True
+    )
+    
+    agent.extractor = MagicMock()
+    agent.extractor.invoke.return_value = mock_extraction
+    
+    final_state = agent.process(state)
+        
+    assert final_state.is_status_update is True
+    assert final_state.new_invoice_status == "Completed"
+    assert final_state.order_id == "CJS-12345"
+    assert "✅ *Status Updated!*" in final_state.final_reply
+    assert "CJS-12345" in final_state.final_reply

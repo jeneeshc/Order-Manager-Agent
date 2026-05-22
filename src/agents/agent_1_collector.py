@@ -15,6 +15,7 @@ class OrderExtractionModel(BaseModel):
     requested_delivery_date: Optional[str] = Field(None, description="Delivery date/day.")
     referenced_order_id: Optional[str] = Field(None, description="Existing Order ID (e.g., CJS-12345) mentioned.")
     mark_as_invoiced: bool = Field(False, description="True if asked to mark order as invoiced.")
+    mark_as_completed: bool = Field(False, description="True if asked to mark a specific order as complete/completed.")
     explain_reasoning: bool = Field(False, description="True if asked to explain logic/math.")
     is_field_override: bool = Field(False, description="True if manually changing a field on an existing order.")
     override_field: Optional[str] = Field(None, description="Field to override ('delivery_date', 'cost', or 'machine').")
@@ -70,7 +71,8 @@ class OrderCollectorAgent:
         4. If the message is about daily summary or today's tasks, set 'is_secretary_query=True'.
         5. If the message is asking for details or a report of orders pending for invoicing, set 'is_pending_invoicing_query=True'.
         6. If the message indicates that invoicing is done (e.g. "invoicing is done for Anna", "invoicing done all", "invoiced Anna"), set 'is_invoicing_done_update=True' and set 'invoicing_done_customer' to the customer name (e.g., "Anna") or 'all' if for all customers.
-        7. Provide a helpful 'missing_fields_prompt' if key info is still absent.
+        7. If the message asks to mark a specific order as complete or says a specific order is complete/completed (e.g., "mark CJS-7ED337 as complete", "CJS-7ED337 is complete"), set 'mark_as_completed=True' and set 'referenced_order_id' to that order ID.
+        8. Provide a helpful 'missing_fields_prompt' if key info is still absent.
         """
         
         # Generative AI reads the human text and extracts the core fields
@@ -99,6 +101,17 @@ class OrderCollectorAgent:
             state.final_reply = (
                 f"✅ *Status Updated!*\n"
                 f"Order *{extraction.referenced_order_id}* has been marked as *Invoiced*. 📋"
+            )
+            return state
+
+        # ✨ 0.1 Intercept explicit mark as completed overrides instantly! ✨
+        if extraction.mark_as_completed and extraction.referenced_order_id:
+            state.is_status_update = True
+            state.new_invoice_status = "Completed"
+            state.order_id = extraction.referenced_order_id
+            state.final_reply = (
+                f"✅ *Status Updated!*\n"
+                f"Order *{extraction.referenced_order_id}* has been marked as *Completed*. 📋"
             )
             return state
             

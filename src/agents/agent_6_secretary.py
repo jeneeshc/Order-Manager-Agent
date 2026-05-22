@@ -17,6 +17,45 @@ class SecretaryAgent:
         Synthesizes a friendly daily report for Siny based on spreadsheet data.
         Addressing Siny: Always use the salutation 'Boss'.
         """
+        from src.services.utils import format_as_monospace_table
+        
+        # 1. Format Orders Due Today
+        due_today_list = data.get("orders_due_today", [])
+        if not due_today_list:
+            orders_due_today_table = "No orders due today! 🎉"
+        else:
+            headers = ["Order ID", "Fabric", "Customer", "Machine", "Cost"]
+            rows = []
+            for o in due_today_list:
+                rows.append([
+                    o.get("id", "Unknown"),
+                    o.get("fabric", "Unknown"),
+                    o.get("customer", "Unknown"),
+                    o.get("machine", "Unknown"),
+                    o.get("cost", "Unknown")
+                ])
+            orders_due_today_table = format_as_monospace_table(headers, rows)
+            
+        # 2. Format Pending Invoices (>7 days old)
+        pending_list = data.get("pending_invoices_old", [])
+        if not pending_list:
+            pending_invoices_table = "No pending invoices > 7 days old! 👍"
+        else:
+            headers = ["Order ID", "Customer", "Cost", "Order Date", "Est. Completion"]
+            rows = []
+            for o in pending_list:
+                comp_date = o.get("completion_date", "")
+                if not comp_date or str(comp_date).lower() in {"unknown", "none", ""}:
+                    comp_date = "N/A"
+                rows.append([
+                    o.get("id", "Unknown"),
+                    o.get("customer", "Unknown"),
+                    o.get("cost", "Unknown"),
+                    o.get("date", "Unknown"),
+                    comp_date
+                ])
+            pending_invoices_table = format_as_monospace_table(headers, rows)
+
         prompt = f"""
         You are Siny's Business Secretary at CJS Designs.
         Your job is to provide a morning briefing with *updates for TODAY* ({data.get('today')}).
@@ -24,8 +63,12 @@ class SecretaryAgent:
         This message is sent every morning so she knows what to focus on TODAY — never say "tomorrow".
         
         DATA FOR TODAY ({data.get('today')}):
-        - Orders Due Today: {data.get('orders_due_today')}
-        - Pending Invoices (>7 days old): {data.get('pending_invoices_old')}
+        - Orders Due Today Table:
+        {orders_due_today_table}
+        
+        - Pending Invoices (>7 days old) Table:
+        {pending_invoices_table}
+        
         - Holiday Status: {data.get('holiday_status') or 'Work Day'}
         - Upcoming Holidays: {data.get('upcoming_holidays')}
         - Specific Reminders: {data.get('reminders')}
@@ -33,19 +76,12 @@ class SecretaryAgent:
         TASK:
         Write a friendly, professional, and concise WhatsApp message to Siny.
         - Start with a warm greeting addressing her as 'Boss'.
-        - Summarise what needs to be completed TODAY (not tomorrow). For each order, explicitly include the Order ID, Customer Name (from 'customer'), Fabric Type (from 'fabric'), Machine Assigned (from 'machine', e.g. 'Ricoma' or 'Aakruthi'), and Cost (from 'cost').
-          Format each order like:
-          *   [Order ID] ([Fabric]) for [Customer Name] — 🧵 Machine: [Machine] (Cost: [Cost])
-        - Gently remind her of old pending invoices if any. For each pending invoice, include:
-          * The Order ID
-          * The Customer Name (from 'customer')
-          * The Cost/Amount (from 'cost', e.g. Rs 1360.0)
-          * The Order Date (from 'date', e.g. May 10)
-          * The Completion Date (from 'completion_date', if available, e.g. Completed: May 12)
-          Format each pending invoice like:
-          *   [Order ID] for [Customer Name] ([Cost], [Order Date], Completed: [Completion Date])
-          If the completion date is not available, omit the completion date part, e.g.:
-          *   [Order ID] for [Customer Name] ([Cost], [Order Date])
+        - For the list of orders due today:
+          - If there are orders, include the header "*📋 Orders Due Today:*" and output the exact `Orders Due Today Table` provided above verbatim (including its triple backticks code block format) without any modifications.
+          - If there are no orders, state "No orders due today! 🎉".
+        - For the list of pending invoices:
+          - If there are pending invoices, include the header "*💸 Pending Invoices (>7 days old):*" and output the exact `Pending Invoices Table` provided above verbatim (including its triple backticks code block format) without any modifications.
+          - If there are no pending invoices, state "No pending invoices > 7 days old! 👍".
         - Mention any holidays (today or upcoming).
         - Include the specific reminders from the Reminders sheet.
         - End with an encouraging note.
