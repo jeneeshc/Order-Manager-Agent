@@ -71,7 +71,7 @@ class InvoicingAgent:
             return state
 
         # 3. Regular single order invoicing processing
-        if state.invoice_status == "pending":
+        if state.invoice_status == "pending" and state.order_id:
             print(f"[{self.name}] Processing invoice for Order {state.order_id}.")
             print(f"[{self.name}] Amount due: Rs {state.total_cost_rs}")
             

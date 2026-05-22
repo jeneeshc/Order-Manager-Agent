@@ -125,6 +125,19 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                 initial_state.is_missing_info = False
                 initial_state.send_order_form = False
                 initial_state.next_step = "supervisor"
+                initial_state.hop_count = 0
+                initial_state.final_reply = None
+                initial_state.is_status_update = False
+                initial_state.new_invoice_status = None
+                initial_state.is_explanation_request = False
+                initial_state.is_payment_query = False
+                initial_state.is_secretary_query = False
+                initial_state.is_pending_invoicing_query = False
+                initial_state.is_invoicing_done_update = False
+                initial_state.invoicing_done_customer = None
+                initial_state.is_field_override = False
+                initial_state.override_field = None
+                initial_state.override_value = None
             else:
                 print(f"[MEM] Fresh session for {sender_phone}")
                 initial_state = AgentState(raw_message=text_body, sender_id=sender_phone)

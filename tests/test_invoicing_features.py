@@ -216,3 +216,66 @@ def test_invoicing_agent_bulk_update_all():
     assert "Invoicing Complete!" in final_state.final_reply
     assert "All 5 pending orders" in final_state.final_reply
     assert "Boss!" in final_state.final_reply
+
+def test_full_pipeline_routing_for_pending_invoicing_report():
+    """Test that the full workflow graph correctly routes a raw message to the invoicing agent and generates the report."""
+    from src.workflow.main_graph import cjs_bot
+    
+    raw_query = "can you give me all pending orders for invoicing?"
+    state = AgentState(raw_message=raw_query, sender_id="test_invoicing_pipeline")
+    
+    mock_orders = {
+        "Anna": [
+            {"order_id": "CJS-12345", "fabric_type": "Cotton", "embroidery_type": "Floral", "cost": "Rs 150.0", "completion_date": "2026-05-15"}
+        ]
+    }
+    
+    # Mock Sheets service
+    with patch('src.agents.agent_5_invoicing.GoogleSheetsService') as MockSheetsForInvoicing, \
+         patch('src.agents.agent_1_collector.GoogleSheetsService') as MockSheetsForCollector, \
+         patch('src.agents.agent_1_collector.ChatGoogleGenerativeAI') as MockCollectorLLM, \
+         patch('src.agents.agent_0_supervisor.ChatGoogleGenerativeAI') as MockSupervisorLLM:
+         
+        # Mock Sheets instances
+        mock_sheets_invoice = MockSheetsForInvoicing.return_value
+        mock_sheets_invoice.get_orders_pending_invoicing.return_value = mock_orders
+        
+        # Mock LLM calls (Structured Output)
+        mock_collector_llm_inst = MockCollectorLLM.return_value
+        mock_collector_extractor = MagicMock()
+        mock_collector_llm_inst.with_structured_output.return_value = mock_collector_extractor
+        
+        # Return structured extraction with is_pending_invoicing_query=True
+        mock_collector_extractor.invoke.return_value = OrderExtractionModel(
+            is_pending_invoicing_query=True,
+            referenced_order_id=None,
+            customer_name=None,
+            fabric_type=None,
+            embroidery_type=None,
+            stitch_count=None,
+            quantity=None,
+            requested_delivery_date=None,
+            mark_as_invoiced=False,
+            explain_reasoning=False,
+            is_field_override=False,
+            is_payment_query=False,
+            is_secretary_query=False,
+            is_invoicing_done_update=False,
+            invoicing_done_customer=None,
+            confirm_duplicate=False
+        )
+        
+        mock_supervisor_llm_inst = MockSupervisorLLM.return_value
+        mock_supervisor_router = MagicMock()
+        mock_supervisor_llm_inst.with_structured_output.return_value = mock_supervisor_router
+        
+        # Invoke the graph
+        final_state_dict = cjs_bot.invoke(state)
+        final_state = AgentState(**final_state_dict)
+        
+    assert final_state.is_pending_invoicing_query is True
+    assert final_state.final_reply is not None
+    assert "orders pending for invoicing, Boss!" in final_state.final_reply
+    assert "Anna" in final_state.final_reply
+    assert "CJS-12345" in final_state.final_reply
+

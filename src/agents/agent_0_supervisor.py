@@ -69,10 +69,27 @@ class SupervisorAgent:
         
         from src.agents.agent_0_supervisor import SupervisorOutput
         
+        has_intents = any([
+            state.is_pending_invoicing_query,
+            state.is_invoicing_done_update,
+            state.is_secretary_query,
+            state.is_status_update,
+            state.is_payment_query,
+            state.is_explanation_request,
+            state.is_field_override
+        ])
+
         if state.hop_count >= 6:
             print(f"[{self.name}] Safety cutoff reached! Forcing END.")
             state.final_reply = "⚠️ *System Safety Check Triggered*\n\nThe request took too many steps to process. I aborted it to save your resources. Please check the logs or try rephrasing your request."
             decision = SupervisorOutput(next_step="END", reasoning="Hop count limit exceeded.", internal_thought="Aborting infinite loop.")
+        elif state.hop_count == 1 and state.raw_message != "I have filled out the order form." and not has_intents:
+            print(f"[{self.name}] Hop count is 1. Programmatically routing to collector for extraction.")
+            decision = SupervisorOutput(
+                next_step="collector",
+                reasoning="First hop: routing to collector to extract parameters/intents from message.",
+                internal_thought="First hop extraction."
+            )
         else:
             decision = self.router.invoke(prompt)
             if decision is None:
