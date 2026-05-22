@@ -467,10 +467,64 @@ class GoogleSheetsService:
                 if sheet_name == target:
                     return str(row[0]).strip()
             
+            
             return None
             
         except Exception as e:
             print(f"[SheetsAPI] get_customer_id_by_name failed: {e}")
+            return None
+
+    def create_customer_if_not_exists(self, name: str) -> str:
+        """
+        Looks up customer by name (fuzzy match). 
+        If found, returns the existing Customer ID.
+        If not found, generates a new numeric Customer ID (e.g. max + 1, starting at 1001),
+        appends a new row to the 'Customers' sheet, and returns the new ID.
+        """
+        if not self.service or not name:
+            return None
+            
+        name = name.strip()
+        # Verify name is valid (not a placeholder like Unknown)
+        name_lower = name.lower()
+        if name_lower in {"unknown", "none", "unknown name", "new customer", "unknown customer", "n/a", "null", "undefined", ""}:
+            return None
+            
+        # 1. Look up existing customer
+        existing_id = self.get_customer_id_by_name(name)
+        if existing_id:
+            return existing_id
+            
+        try:
+            # 2. Get all customers to find the max ID
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, range="Customers!A:B"
+            ).execute()
+            rows = result.get('values', [])
+            
+            max_id = 1000  # Default starting number minus 1
+            for i, row in enumerate(rows):
+                if i == 0 or not row: continue  # Skip header
+                cid_str = str(row[0]).strip()
+                if cid_str.isdigit():
+                    max_id = max(max_id, int(cid_str))
+            
+            new_id = str(max_id + 1)
+            
+            # 3. Append the new customer row
+            body = {'values': [[new_id, name]]}
+            self.service.spreadsheets().values().append(
+                spreadsheetId=self.spreadsheet_id,
+                range="Customers!A:B",
+                valueInputOption="USER_ENTERED",
+                body=body
+            ).execute()
+            
+            print(f"[SheetsAPI] Created new customer: ID={new_id}, Name='{name}'")
+            return new_id
+            
+        except Exception as e:
+            print(f"[SheetsAPI] create_customer_if_not_exists failed: {e}")
             return None
             
     def get_all_customers_map(self) -> dict:

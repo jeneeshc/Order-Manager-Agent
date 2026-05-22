@@ -131,7 +131,19 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
             
             # 1.5 Handle Form Submission Bypass
             if interactive_payload:
-                initial_state.customer_name = interactive_payload.get("customer_name")
+                raw_cust_name = interactive_payload.get("customer_name")
+                from src.agents.agent_1_collector import sanitize_customer_name
+                sanitized_cust_name = sanitize_customer_name(raw_cust_name)
+                
+                initial_state.customer_name = sanitized_cust_name
+                if sanitized_cust_name:
+                    cid = db_service.create_customer_if_not_exists(sanitized_cust_name)
+                    initial_state.customer_id = cid
+                else:
+                    initial_state.customer_id = None
+                    initial_state.is_missing_info = True
+                    initial_state.missing_fields_prompt = "Please provide a valid customer name to complete the order."
+                
                 initial_state.fabric_type = interactive_payload.get("fabric_type")
                 # Combine garment type into embroidery type to match existing state logic
                 garment = interactive_payload.get("garment_type", "")

@@ -10,16 +10,29 @@ def test_supervisor_multi_intent():
     print("\n--- Testing Supervisor Multi-Intent Orchestration ---")
     
     # Mocking Sheets Service inside the agents
-    with patch('src.services.sheets.GoogleSheetsService') as MockSheets:
-        mock_db = MockSheets.return_value
+    with patch('src.agents.agent_6_secretary.GoogleSheetsService') as MockSheets6, \
+         patch('src.agents.agent_1_collector.GoogleSheetsService') as MockSheets1, \
+         patch('src.agents.agent_2_scheduler.GoogleSheetsService') as MockSheets2, \
+         patch('src.agents.agent_3_estimator.GoogleSheetsService') as MockSheets3:
+        
+        mock_db = MagicMock()
+        MockSheets6.return_value = mock_db
+        MockSheets1.return_value = mock_db
+        MockSheets2.return_value = mock_db
+        MockSheets3.return_value = mock_db
         
         # Mock get_order to return nothing (new order)
         mock_db.get_order.return_value = None
         
+        # Mock customer registration and lookup
+        mock_db.create_customer_if_not_exists.return_value = "1004"
+        mock_db.find_similar_order.return_value = None
+        
         # Mock machine availability
+        from datetime import datetime
         mock_db.get_machine_availability.return_value = {
-            "Ricoma-1": MagicMock(),
-            "Aakruthi-1": MagicMock()
+            "Ricoma-1": datetime(2026, 5, 22),
+            "Aakruthi-1": datetime(2026, 5, 22)
         }
         
         # Mock holidays

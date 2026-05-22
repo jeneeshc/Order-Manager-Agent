@@ -25,6 +25,14 @@ class OrderExtractionModel(BaseModel):
     is_missing_info: bool = Field(False, description="True if info is missing and not an update/query.")
     missing_fields_prompt: Optional[str] = Field(None, description="Helpful prompt for missing fields.")
 
+def sanitize_customer_name(name: Optional[str]) -> Optional[str]:
+    if not name:
+        return None
+    name_clean = name.strip()
+    if name_clean.lower() in {"unknown", "none", "unknown name", "new customer", "unknown customer", "n/a", "null", "undefined", ""}:
+        return None
+    return name_clean
+
 class OrderCollectorAgent:
     def __init__(self):
         self.name = "Order Collector Agent"
@@ -116,12 +124,14 @@ class OrderCollectorAgent:
         # ✨ 0.7 Intercept Payment Query! ✨
         if extraction.is_payment_query:
             state.is_payment_query = True
-            return state
+            if not (extraction.customer_name or extraction.fabric_type or extraction.embroidery_type or extraction.stitch_count):
+                return state
             
         # ✨ 0.8 Intercept Secretary Query! ✨
         if extraction.is_secretary_query:
             state.is_secretary_query = True
-            return state
+            if not (extraction.customer_name or extraction.fabric_type or extraction.embroidery_type or extraction.stitch_count):
+                return state
         
         # Hydrate from Google Sheets if an Order ID was parsed!
         if extraction.referenced_order_id:
@@ -139,16 +149,20 @@ class OrderCollectorAgent:
                 print(f"[{self.name}] DB order not found. Falling back to chat extraction exclusively.")
         
         # Hydrate customer_name from extraction and look up ID
-        if extraction.customer_name:
-            state.customer_name = extraction.customer_name
+        sanitized_name = sanitize_customer_name(extraction.customer_name or state.customer_name)
+        if sanitized_name:
+            state.customer_name = sanitized_name
             db = GoogleSheetsService()
-            cid = db.get_customer_id_by_name(extraction.customer_name)
+            cid = db.create_customer_if_not_exists(sanitized_name)
             if cid:
-                print(f"[{self.name}] Linked Customer '{extraction.customer_name}' to ID: {cid}")
+                print(f"[{self.name}] Linked/Registered Customer '{sanitized_name}' to ID: {cid}")
                 state.customer_id = cid
             else:
-                print(f"[{self.name}] Customer '{extraction.customer_name}' not found in DB.")
-                state.customer_id = "New Customer"
+                print(f"[{self.name}] Failed to resolve Customer ID for '{sanitized_name}'.")
+                state.customer_id = None
+        else:
+            state.customer_name = None
+            state.customer_id = None
 
         # Safely hydrate state if AI explicitly extracted something NEW
         if extraction.fabric_type and not extraction.referenced_order_id:

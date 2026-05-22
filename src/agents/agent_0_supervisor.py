@@ -59,9 +59,9 @@ class SupervisorAgent:
         DECISION RULES:
         1. CRITICAL: If 'Missing Info? True' (is_missing_info), you MUST route to 'END' immediately. This allows the system to send the missing information prompt to Siny. Do NOT route to collector again if information is already flagged as missing.
         2. If 'Missing Info? False' AND this is an order request AND Customer, Fabric, Embroidery, and Stitches are currently 'Unknown', route to 'collector'.
-        3. If Siny asks for a daily summary, work schedule, or "what to do today", route to 'secretary'.
-        4. If all required order info is present (Customer, Fabric, Embroidery, Stitches are NOT 'Unknown') and scheduling hasn't been done (Est. Completion is 'Unknown'), route to 'scheduler'.
-        5. If scheduling is done but costs aren't calculated, route to 'estimator'.
+        3. If all required order info is present (Customer, Fabric, Embroidery, Stitches are NOT 'Unknown') and scheduling hasn't been done (Est. Completion is 'Unknown'), route to 'scheduler'.
+        4. If scheduling is done but costs aren't calculated, route to 'estimator'.
+        5. If Siny asks for a daily summary, work schedule, or "what to do today", route to 'secretary'.
         6. If all business logic (scheduling, cost, invoicing) is complete or it's a simple query already answered, route to 'END'.
         7. CRITICAL: If 'Final Reply Ready? Yes', you MUST route to 'END' immediately to deliver the message to Siny.
         """
