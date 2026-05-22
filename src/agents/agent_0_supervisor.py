@@ -58,7 +58,7 @@ class SupervisorAgent:
         
         DECISION RULES:
         1. CRITICAL: If 'Missing Info? True' (is_missing_info), you MUST route to 'END' immediately. This allows the system to send the missing information prompt to Siny. Do NOT route to collector again if information is already flagged as missing.
-        2. If 'Missing Info? False' AND this is an order request AND Customer, Fabric, Embroidery, and Stitches are currently 'Unknown', route to 'collector'.
+        2. If 'Missing Info? False' AND this is an order request AND ANY of Customer, Fabric, Embroidery, or Stitches is 'Unknown', you MUST route to 'collector' to extract the remaining information.
         3. If all required order info is present (Customer, Fabric, Embroidery, Stitches are NOT 'Unknown') and scheduling hasn't been done (Est. Completion is 'Unknown'), route to 'scheduler'.
         4. If scheduling is done but costs aren't calculated, route to 'estimator'.
         5. If Siny asks for a daily summary, work schedule, or "what to do today", route to 'secretary'.
@@ -77,10 +77,39 @@ class SupervisorAgent:
             if decision is None:
                 print(f"[{self.name}] Router LLM returned None. Defaulting to 'END' to prevent crash.")
                 decision = SupervisorOutput(next_step="END", reasoning="Safety filter blocked or parsing failed.", internal_thought="Error")
-        print(f"[{self.name}] Router Decision: {decision.next_step} ({decision.reasoning})")
+        
+        next_step = decision.next_step
+        reasoning = decision.reasoning
+
+        # Programmatic Guardrails to enforce mandatory fields on order creation
+        is_order_creation = not any([
+            state.is_status_update,
+            state.is_explanation_request,
+            state.is_field_override,
+            state.is_payment_query,
+            state.is_secretary_query
+        ])
+
+        if is_order_creation and next_step in {"scheduler", "estimator", "END"} and not state.is_missing_info:
+            missing_fields = []
+            if not state.customer_name or state.customer_name.strip().lower() in {"unknown", "none", ""}:
+                missing_fields.append("customer name")
+            if not state.fabric_type or state.fabric_type.strip().lower() in {"unknown", "none", ""}:
+                missing_fields.append("fabric type")
+            if not state.embroidery_type or state.embroidery_type.strip().lower() in {"unknown", "none", ""}:
+                missing_fields.append("embroidery style")
+            if not state.stitch_count or (isinstance(state.stitch_count, int) and state.stitch_count <= 0):
+                missing_fields.append("stitch count")
+                
+            if missing_fields:
+                print(f"[{self.name}] Guardrail Triggered! Missing mandatory fields: {missing_fields}. Overriding next_step to 'collector'.")
+                next_step = "collector"
+                reasoning = f"Guardrail overridden to collector due to missing required fields: {', '.join(missing_fields)}"
+
+        print(f"[{self.name}] Supervisor Routing Decision: {next_step} (original: {decision.next_step}, reasoning: {reasoning})")
         
         # If the task is finished, send the final response to Siny.
-        if decision.next_step == "END":
+        if next_step == "END":
             print(f"[{self.name}] Task complete. Preparing final response...")
 
             if state.final_reply:
@@ -125,7 +154,7 @@ class SupervisorAgent:
                     ).strip()
 
         # In a supervisor-led loopback, we use next_step to control the graph edge
-        state.next_step = decision.next_step
-        state.aggregated_reasoning += f"\n[Supervisor]: Decided to route to {decision.next_step} because {decision.reasoning}.\n"
+        state.next_step = next_step
+        state.aggregated_reasoning += f"\n[Supervisor]: Decided to route to {next_step} because {reasoning}.\n"
         
         return state

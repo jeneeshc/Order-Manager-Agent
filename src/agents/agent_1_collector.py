@@ -145,6 +145,13 @@ class OrderCollectorAgent:
                 state.fabric_type = extraction.fabric_type or historical_db_order.get("fabric_type")
                 state.embroidery_type = extraction.embroidery_type or historical_db_order.get("embroidery_type")
                 state.stitch_count = extraction.stitch_count or historical_db_order.get("stitch_count")
+                
+                # Hydrate customer details from historical order
+                hist_cid = historical_db_order.get("customer_id")
+                if hist_cid:
+                    state.customer_id = hist_cid
+                    cust_map = db.get_all_customers_map()
+                    state.customer_name = cust_map.get(hist_cid, state.customer_name)
             else:
                 print(f"[{self.name}] DB order not found. Falling back to chat extraction exclusively.")
         

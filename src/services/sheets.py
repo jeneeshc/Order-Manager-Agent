@@ -34,6 +34,11 @@ class GoogleSheetsService:
         Returns the generated Order ID if successful.
         """
         if not self.service: return None
+
+        # Enforce that customer_id is mandatory and valid
+        if not state.customer_id or str(state.customer_id).strip().lower() in {"unknown", "none", "unknown name", "new customer", "unknown customer", "n/a", "null", "undefined", ""}:
+            print(f"[SheetsAPI] Append failed: Invalid or missing customer_id '{state.customer_id}'. Customer name is mandatory.")
+            return None
         
         # Generate a unique tracking ID
         order_id = f"CJS-{str(uuid.uuid4())[:6].upper()}"
