@@ -21,6 +21,9 @@ class OrderExtractionModel(BaseModel):
     override_value: Optional[str] = Field(None, description="New value for the override.")
     is_payment_query: bool = Field(False, description="True if asking about payments/unpaid orders.")
     is_secretary_query: bool = Field(False, description="True if asking for a daily summary, work update, or tasks for today (secretary function).")
+    is_pending_invoicing_query: bool = Field(False, description="True if asking for details/report of orders pending for invoicing.")
+    is_invoicing_done_update: bool = Field(False, description="True if indicating that invoicing/billing is done/completed (either for a particular customer or for all customers).")
+    invoicing_done_customer: Optional[str] = Field(None, description="The customer name for whom invoicing is done, or 'all' if for all customers.")
     confirm_duplicate: bool = Field(False, description="True ONLY if the bot previously warned about a similar order and the user explicitly replied 'create new' or 'yes'. False for all fresh orders.")
     is_missing_info: bool = Field(False, description="True if info is missing and not an update/query.")
     missing_fields_prompt: Optional[str] = Field(None, description="Helpful prompt for missing fields.")
@@ -65,7 +68,9 @@ class OrderCollectorAgent:
         2. If "Numbers 10" or "Qty 5" is mentioned, extract that into 'quantity'.
         3. If a specific Order ID (CJS-XXXXXX) is mentioned, set 'referenced_order_id'.
         4. If the message is about daily summary or today's tasks, set 'is_secretary_query=True'.
-        5. Provide a helpful 'missing_fields_prompt' if key info is still absent.
+        5. If the message is asking for details or a report of orders pending for invoicing, set 'is_pending_invoicing_query=True'.
+        6. If the message indicates that invoicing is done (e.g. "invoicing is done for Anna", "invoicing done all", "invoiced Anna"), set 'is_invoicing_done_update=True' and set 'invoicing_done_customer' to the customer name (e.g., "Anna") or 'all' if for all customers.
+        7. Provide a helpful 'missing_fields_prompt' if key info is still absent.
         """
         
         # Generative AI reads the human text and extracts the core fields
@@ -132,6 +137,17 @@ class OrderCollectorAgent:
             state.is_secretary_query = True
             if not (extraction.customer_name or extraction.fabric_type or extraction.embroidery_type or extraction.stitch_count):
                 return state
+
+        # ✨ 0.9 Intercept Pending Invoicing Query! ✨
+        if extraction.is_pending_invoicing_query:
+            state.is_pending_invoicing_query = True
+            return state
+
+        # ✨ 0.95 Intercept Invoicing Done Update! ✨
+        if extraction.is_invoicing_done_update:
+            state.is_invoicing_done_update = True
+            state.invoicing_done_customer = extraction.invoicing_done_customer
+            return state
         
         # Hydrate from Google Sheets if an Order ID was parsed!
         if extraction.referenced_order_id:

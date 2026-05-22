@@ -54,7 +54,7 @@ class SupervisorAgent:
         - 'scheduler': Calculates production dates using machine queues and holidays.
         - 'estimator': Calculates costs and machine assignments.
         - 'social': Prepares media assets and design mockups.
-        - 'invoice': Handles payment status, pending dues, and finalizes orders.
+        - 'invoice': Handles payment status, pending dues, report of orders pending for invoicing, and bulk invoicing updates.
         
         DECISION RULES:
         1. CRITICAL: If 'Missing Info? True' (is_missing_info), you MUST route to 'END' immediately. This allows the system to send the missing information prompt to Siny. Do NOT route to collector again if information is already flagged as missing.
@@ -62,8 +62,9 @@ class SupervisorAgent:
         3. If all required order info is present (Customer, Fabric, Embroidery, Stitches are NOT 'Unknown') and scheduling hasn't been done (Est. Completion is 'Unknown'), route to 'scheduler'.
         4. If scheduling is done but costs aren't calculated, route to 'estimator'.
         5. If Siny asks for a daily summary, work schedule, or "what to do today", route to 'secretary'.
-        6. If all business logic (scheduling, cost, invoicing) is complete or it's a simple query already answered, route to 'END'.
-        7. CRITICAL: If 'Final Reply Ready? Yes', you MUST route to 'END' immediately to deliver the message to Siny.
+        6. If Siny asks for details of orders pending for invoicing, or states that invoicing is done (for a customer or all customers), route to 'invoice'.
+        7. If all business logic (scheduling, cost, invoicing) is complete or it's a simple query already answered, route to 'END'.
+        8. CRITICAL: If 'Final Reply Ready? Yes', you MUST route to 'END' immediately to deliver the message to Siny.
         """
         
         from src.agents.agent_0_supervisor import SupervisorOutput
@@ -81,13 +82,20 @@ class SupervisorAgent:
         next_step = decision.next_step
         reasoning = decision.reasoning
 
+        # Force routing to invoice agent if invoicing queries/updates are detected
+        if state.is_pending_invoicing_query or state.is_invoicing_done_update:
+            next_step = "invoice"
+            reasoning = "Message is an invoicing query or status update, routing to Invoicing Agent."
+        
         # Programmatic Guardrails to enforce mandatory fields on order creation
         is_order_creation = not any([
             state.is_status_update,
             state.is_explanation_request,
             state.is_field_override,
             state.is_payment_query,
-            state.is_secretary_query
+            state.is_secretary_query,
+            state.is_pending_invoicing_query,
+            state.is_invoicing_done_update
         ])
 
         if is_order_creation and next_step in {"scheduler", "estimator", "END"} and not state.is_missing_info:

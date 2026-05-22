@@ -759,3 +759,105 @@ class GoogleSheetsService:
         except Exception as e:
             print(f"[SheetsAPI] Warning: 'Reminders' tab execution failure: {e}")
             return reminders
+
+    def get_orders_pending_invoicing(self) -> dict:
+        """
+        Scans all orders and returns those with status not in ('invoiced', 'completed'),
+        grouped by Customer Name.
+        Returns a dict: {"Customer Name": [order_dict, ...]}
+        """
+        if not self.service: return {}
+        try:
+            customer_map = self.get_all_customers_map()
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, range="A:K"
+            ).execute()
+            rows = result.get('values', [])
+            pending = {}
+            for i, row in enumerate(rows):
+                if i == 0: continue # skip header
+                if len(row) < 2: continue
+                
+                status = str(row[10]).strip().lower() if len(row) > 10 else ""
+                if status in ("invoiced", "completed"): continue
+                
+                order_id = row[1]
+                cid = row[2].strip() if len(row) > 2 else "Unknown"
+                cname = customer_map.get(cid, cid)
+                
+                order = {
+                    "order_id": order_id,
+                    "customer_id": cid,
+                    "customer_name": cname,
+                    "fabric_type": row[4] if len(row) > 4 else "Unknown",
+                    "embroidery_type": row[5] if len(row) > 5 else "Unknown",
+                    "cost": row[9] if len(row) > 9 else "Rs 0",
+                    "completion_date": row[8] if len(row) > 8 else "Unknown",
+                }
+                if cname not in pending:
+                    pending[cname] = []
+                pending[cname].append(order)
+            return pending
+        except Exception as e:
+            print(f"[SheetsAPI] get_orders_pending_invoicing failed: {e}")
+            return {}
+
+    def mark_invoicing_completed(self, customer_name_or_all: str) -> int:
+        """
+        Updates status to 'Completed' for all orders pending invoicing under the specified customer (or 'all').
+        Returns the number of orders updated.
+        """
+        if not self.service or not customer_name_or_all: return 0
+        
+        try:
+            customer_map = self.get_all_customers_map()
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, range="B:K"
+            ).execute()
+            rows = result.get('values', [])
+            
+            target_all = customer_name_or_all.strip().lower() == "all"
+            target_cid = None
+            target_cname = None
+            
+            if not target_all:
+                target_cid = self.get_customer_id_by_name(customer_name_or_all)
+                target_cname = customer_name_or_all.strip().lower()
+                
+            updated_count = 0
+            for i, row in enumerate(rows):
+                row_num = i + 1
+                if i == 0: continue # skip header
+                if len(row) < 1: continue
+                
+                order_id = row[0] # Column B
+                cid = row[1].strip() if len(row) > 1 else "" # Column C
+                status = row[9].strip().lower() if len(row) > 9 else "" # Column K
+                
+                if status in ("invoiced", "completed"): continue
+                
+                cname = customer_map.get(cid, "").strip().lower()
+                
+                match = False
+                if target_all:
+                    match = True
+                else:
+                    if (target_cid and cid == target_cid) or (target_cname and cname == target_cname):
+                        match = True
+                        
+                if match:
+                    body = {'values': [["Completed"]]}
+                    self.service.spreadsheets().values().update(
+                        spreadsheetId=self.spreadsheet_id,
+                        range=f"K{row_num}",
+                        valueInputOption="USER_ENTERED",
+                        body=body
+                    ).execute()
+                    updated_count += 1
+                    
+            print(f"[SheetsAPI] Updated {updated_count} orders to Completed for customer '{customer_name_or_all}'")
+            return updated_count
+            
+        except Exception as e:
+            print(f"[SheetsAPI] mark_invoicing_completed failed: {e}")
+            return 0
