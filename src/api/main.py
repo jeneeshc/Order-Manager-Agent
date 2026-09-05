@@ -163,9 +163,14 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                 embroidery = interactive_payload.get("embroidery_style", "")
                 initial_state.embroidery_type = f"{embroidery} {garment}".strip()
                 initial_state.stitch_count = int(interactive_payload.get("stitch_count", 0))
+                raw_labor = interactive_payload.get("hours_required") or interactive_payload.get("labor_hours") or 0.0
+                try:
+                    initial_state.labor_hours = float(raw_labor)
+                except (ValueError, TypeError):
+                    initial_state.labor_hours = 0.0
                 initial_state.requested_delivery_date = str(interactive_payload.get("delivery_date"))
                 initial_state.raw_message = "I have filled out the order form."
-                print(f"[WEBHOOK] Injected native Flow data into state for {sender_phone}")
+                print(f"[WEBHOOK] Injected native Flow data into state for {sender_phone} (Stitches: {initial_state.stitch_count}, Hours: {initial_state.labor_hours})")
             
             # 2. Execute the LangGraph chain (with Guard Rails)
             final_state_dict = cjs_bot.invoke(initial_state, config={"recursion_limit": 20})
@@ -184,19 +189,35 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                  # Bot needs more info (from Collector worker)
                  whatsapp_service.send_text_message(sender_phone, rebuilt_state.missing_fields_prompt)
                  memory_service.save_state(sender_phone, rebuilt_state)
+            elif rebuilt_state.active_menu:
+                 # Menu navigation or waiting for sub-option / selection
+                 reply = rebuilt_state.final_reply or rebuilt_state.raw_message
+                 if reply:
+                     whatsapp_service.send_text_message(sender_phone, reply)
+                 memory_service.save_state(sender_phone, rebuilt_state)
             else:
                  # Finalize any Database changes
                  if rebuilt_state.order_id:
                      if rebuilt_state.is_status_update:
                          db_service.update_order_status(rebuilt_state.order_id, rebuilt_state.new_invoice_status)
+                     elif rebuilt_state.is_field_override and rebuilt_state.override_field and rebuilt_state.override_value:
+                         db_service.update_order_field(rebuilt_state.order_id, rebuilt_state.override_field, rebuilt_state.override_value)
                      else:
                          db_service.update_order(rebuilt_state)
-                 elif not any([rebuilt_state.is_explanation_request, rebuilt_state.is_secretary_query, rebuilt_state.is_payment_query]):
+                 elif not any([
+                     rebuilt_state.is_explanation_request,
+                     rebuilt_state.is_secretary_query,
+                     rebuilt_state.is_payment_query,
+                     rebuilt_state.is_pending_invoicing_query,
+                     rebuilt_state.is_invoicing_done_update
+                 ]):
                      db_service.append_order(rebuilt_state)
 
                  # 4. Final Reply
-                 print(f"[SEND] Final response for {sender_phone}: {rebuilt_state.raw_message[:50]}...")
-                 whatsapp_service.send_text_message(sender_phone, rebuilt_state.raw_message)
+                 reply = rebuilt_state.final_reply or rebuilt_state.raw_message
+                 print(f"[SEND] Final response for {sender_phone}: {reply[:50] if reply else ''}...")
+                 if reply:
+                     whatsapp_service.send_text_message(sender_phone, reply)
                  
                  # Clear state as the task is finished
                  memory_service.clear_state(sender_phone)

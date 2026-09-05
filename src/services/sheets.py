@@ -43,7 +43,7 @@ class GoogleSheetsService:
         # Generate a unique tracking ID
         order_id = f"CJS-{str(uuid.uuid4())[:6].upper()}"
         
-        # New column order (A-M) matching workflow progression
+        # Standard column order (A-L) for Orders tab
         values = [[
             datetime.datetime.now(IST).strftime("%Y-%m-%d %H:%M"),  # A: Order Date
             order_id,                                               # B: Order ID
@@ -56,8 +56,7 @@ class GoogleSheetsService:
             state.estimated_completion_date or "Unknown",          # I: Estimated Delivery Date
             f"Rs {state.total_cost_rs or 0}",                      # J: Estimated Cost
             state.invoice_status or "Estimated",                   # K: Payment Status
-            state.aggregated_reasoning or "No logic recorded",     # L: Reasoning
-            state.quantity or 1                                    # M: Quantity
+            state.aggregated_reasoning or "No logic recorded"      # L: Reasoning
         ]]
         
         body = {'values': values}
@@ -65,7 +64,7 @@ class GoogleSheetsService:
         try:
             result = self.service.spreadsheets().values().append(
                 spreadsheetId=self.spreadsheet_id,
-                range="A:K",
+                range="'Orders'!A:L",
                 valueInputOption="USER_ENTERED",
                 body=body
             ).execute()
@@ -88,7 +87,7 @@ class GoogleSheetsService:
         try:
             # Step 1: Find the row index
             result = self.service.spreadsheets().values().get(
-                spreadsheetId=self.spreadsheet_id, range="B:B"
+                spreadsheetId=self.spreadsheet_id, range="'Orders'!B:B"
             ).execute()
             rows = result.get('values', [])
             target_row = None
@@ -103,7 +102,7 @@ class GoogleSheetsService:
                 
             # Step 2: Read existing reasoning to append
             k_result = self.service.spreadsheets().values().get(
-                spreadsheetId=self.spreadsheet_id, range=f"L{target_row}"
+                spreadsheetId=self.spreadsheet_id, range=f"'Orders'!L{target_row}"
             ).execute()
             existing_reasoning = ""
             k_vals = k_result.get('values', [])
@@ -120,13 +119,12 @@ class GoogleSheetsService:
                 state.estimated_completion_date or "Unknown",
                 f"Rs {state.total_cost_rs or 0}",
                 state.invoice_status or "Estimated",
-                existing_reasoning + "\n[Update Session]: " + (state.aggregated_reasoning or ""),
-                state.quantity or 1 # M: Quantity
+                existing_reasoning + "\n[Update Session]: " + (state.aggregated_reasoning or "")
             ]]
             
             self.service.spreadsheets().values().update(
                 spreadsheetId=self.spreadsheet_id,
-                range=f"E{target_row}:M{target_row}",
+                range=f"'Orders'!E{target_row}:L{target_row}",
                 valueInputOption="USER_ENTERED",
                 body={'values': updated_values}
             ).execute()
@@ -140,7 +138,7 @@ class GoogleSheetsService:
 
     def get_order(self, order_id: str) -> dict:
         """
-        Scans Sheet1 for a specific Order ID and securely returns 
+        Scans the 'Orders' tab for a specific Order ID and securely returns 
         the historical properties associated with it.
         """
         if not self.service or not order_id: return None
@@ -148,7 +146,7 @@ class GoogleSheetsService:
         try:
             result = self.service.spreadsheets().values().get(
                 spreadsheetId=self.spreadsheet_id,
-                range="A:K"
+                range="'Orders'!A:O"
             ).execute()
             
             rows = result.get('values', [])
@@ -156,18 +154,21 @@ class GoogleSheetsService:
                 if len(row) > 1 and row[1] == order_id:
                     print(f"[SheetsAPI] Found historical order: {order_id}")
                     return {
-                        "date":             row[0]  if len(row) > 0  else None,
-                        "customer_id":      row[2]  if len(row) > 2  else None,
-                        "phone":            row[3]  if len(row) > 3  else None,
-                        "fabric_type":      row[4]  if len(row) > 4  else None,
-                        "embroidery_type":  row[5]  if len(row) > 5  else None,
-                        "stitch_count":     int(row[6]) if len(row) > 6 and str(row[6]).isdigit() else None,
-                        "machine_assigned": row[7]  if len(row) > 7  else None,
-                        "completion_date":  row[8]  if len(row) > 8  else None,
-                        "cost":             row[9]  if len(row) > 9  else None,
-                        "status":           row[10] if len(row) > 10 else None,
-                        "reasoning":        row[11] if len(row) > 11 else "No historical agent reasoning log found in Column L.",
-                        "quantity":         int(row[12]) if len(row) > 12 and str(row[12]).isdigit() else None
+                        "date":                   row[0]  if len(row) > 0  else None,
+                        "order_id":               row[1]  if len(row) > 1  else None,
+                        "customer_id":            row[2]  if len(row) > 2  else None,
+                        "phone":                  row[3]  if len(row) > 3  else None,
+                        "fabric_type":            row[4]  if len(row) > 4  else None,
+                        "embroidery_type":        row[5]  if len(row) > 5  else None,
+                        "stitch_count":           int(row[6]) if len(row) > 6 and str(row[6]).isdigit() else None,
+                        "machine_assigned":       row[7]  if len(row) > 7  else None,
+                        "completion_date":        row[8]  if len(row) > 8  else None,
+                        "cost":                   row[9]  if len(row) > 9  else None,
+                        "status":                 row[10] if len(row) > 10 else None,
+                        "reasoning":              row[11] if len(row) > 11 else "No historical agent reasoning log found in Column L.",
+                        "override_delivery_date": row[12] if len(row) > 12 else None,
+                        "override_cost":          row[13] if len(row) > 13 else None,
+                        "override_machine":       row[14] if len(row) > 14 else None,
                     }
             print(f"[SheetsAPI] Order {order_id} not found in database.")
             return None
@@ -185,7 +186,7 @@ class GoogleSheetsService:
             return availability
             
         try:
-            result = self.service.spreadsheets().values().get(spreadsheetId=self.spreadsheet_id, range="A:K").execute()
+            result = self.service.spreadsheets().values().get(spreadsheetId=self.spreadsheet_id, range="'Orders'!A:K").execute()
             rows = result.get('values', [])
             
             for row in rows:
@@ -247,42 +248,6 @@ class GoogleSheetsService:
             print(f"[SheetsAPI] Warning: 'Holidays' tab not found or unreadable: {e}")
             return holidays
 
-    def get_costing_rules(self) -> dict:
-        """
-        Extracts variable combinatorial pricing natively from Boss's 'Costing' tab.
-        Strict 5-Column Requirement: [Embroidery(A), Material(B), Unit(C), UnitCount(D), Cost(E)]
-        """
-        rules = {}
-        if not self.service: return rules
-        
-        try:
-            result = self.service.spreadsheets().values().get(
-                spreadsheetId=self.spreadsheet_id, range="Costing!A:E"
-            ).execute()
-            rows = result.get('values', [])
-            
-            for index, row in enumerate(rows):
-                if index == 0: continue # Pass header strictly
-                
-                if len(row) >= 5:
-                    embroidery = str(row[0]).strip().lower()
-                    material = str(row[1]).strip().lower()
-                    try:
-                        unit_count = float(row[3])
-                        cost = float(row[4])
-                        # Bind combinatorial tuple!
-                        rules[(embroidery, material)] = {
-                            "unit_count": unit_count,
-                            "cost": cost
-                        }
-                    except ValueError:
-                        pass
-                        
-            print(f"[SheetsAPI] Extracted {len(rules)} combinatoric pricing pairs from 'Costing' tab.")
-            return rules
-        except Exception as e:
-            print(f"[SheetsAPI] Warning: 'Costing' tab 5-Column execution failed: {e}")
-            return rules
 
     def update_order_status(self, order_id: str, new_status: str) -> bool:
         """
@@ -294,7 +259,7 @@ class GoogleSheetsService:
         try:
             # Step 1: Query the entire Column B explicitly to find the Row Index
             result = self.service.spreadsheets().values().get(
-                spreadsheetId=self.spreadsheet_id, range="B:B"
+                spreadsheetId=self.spreadsheet_id, range="'Orders'!B:B"
             ).execute()
             
             rows = result.get('values', [])
@@ -313,7 +278,7 @@ class GoogleSheetsService:
             body = {'values': [[new_status]]}
             self.service.spreadsheets().values().update(
                 spreadsheetId=self.spreadsheet_id,
-                range=f"K{target_row_num}",
+                range=f"'Orders'!K{target_row_num}",
                 valueInputOption="USER_ENTERED",
                 body=body
             ).execute()
@@ -352,7 +317,7 @@ class GoogleSheetsService:
         try:
             # Step 1: Find row index by Order ID in Column B
             result = self.service.spreadsheets().values().get(
-                spreadsheetId=self.spreadsheet_id, range="B:B"
+                spreadsheetId=self.spreadsheet_id, range="'Orders'!B:B"
             ).execute()
             rows = result.get('values', [])
             target_row = None
@@ -367,7 +332,7 @@ class GoogleSheetsService:
 
             # Step 2: Read existing Col L (reasoning) to append, not overwrite
             k_result = self.service.spreadsheets().values().get(
-                spreadsheetId=self.spreadsheet_id, range=f"L{target_row}"
+                spreadsheetId=self.spreadsheet_id, range=f"'Orders'!L{target_row}"
             ).execute()
             existing_k = ""
             k_vals = k_result.get('values', [])
@@ -377,7 +342,7 @@ class GoogleSheetsService:
             # Step 3: Write override value to correct column (M/N/O)
             self.service.spreadsheets().values().update(
                 spreadsheetId=self.spreadsheet_id,
-                range=f"{target_col}{target_row}",
+                range=f"'Orders'!{target_col}{target_row}",
                 valueInputOption="USER_ENTERED",
                 body={'values': [[new_value]]}
             ).execute()
@@ -388,7 +353,7 @@ class GoogleSheetsService:
             updated_k = existing_k + override_note
             self.service.spreadsheets().values().update(
                 spreadsheetId=self.spreadsheet_id,
-                range=f"L{target_row}",
+                range=f"'Orders'!L{target_row}",
                 valueInputOption="USER_ENTERED",
                 body={'values': [[updated_k]]}
             ).execute()
@@ -413,7 +378,7 @@ class GoogleSheetsService:
             customer_map = self.get_all_customers_map()
             
             result = self.service.spreadsheets().values().get(
-                spreadsheetId=self.spreadsheet_id, range="A:O"
+                spreadsheetId=self.spreadsheet_id, range="'Orders'!A:O"
             ).execute()
             rows = result.get('values', [])
             pending = {}  # { "CUST-001 - Name": [orders] }
@@ -460,7 +425,7 @@ class GoogleSheetsService:
         if not self.service or not name: return None
         try:
             result = self.service.spreadsheets().values().get(
-                spreadsheetId=self.spreadsheet_id, range="Customers!A:B"
+                spreadsheetId=self.spreadsheet_id, range="Customers!A:D"
             ).execute()
             rows = result.get('values', [])
             
@@ -472,19 +437,18 @@ class GoogleSheetsService:
                 if sheet_name == target:
                     return str(row[0]).strip()
             
-            
             return None
             
         except Exception as e:
             print(f"[SheetsAPI] get_customer_id_by_name failed: {e}")
             return None
 
-    def create_customer_if_not_exists(self, name: str) -> str:
+    def create_customer_if_not_exists(self, name: str, phone: str = "", address: str = "") -> str:
         """
         Looks up customer by name (fuzzy match). 
         If found, returns the existing Customer ID.
         If not found, generates a new numeric Customer ID (e.g. max + 1, starting at 1001),
-        appends a new row to the 'Customers' sheet, and returns the new ID.
+        appends a new row to the 'Customers' sheet (Cols A:D), and returns the new ID.
         """
         if not self.service or not name:
             return None
@@ -503,7 +467,7 @@ class GoogleSheetsService:
         try:
             # 2. Get all customers to find the max ID
             result = self.service.spreadsheets().values().get(
-                spreadsheetId=self.spreadsheet_id, range="Customers!A:B"
+                spreadsheetId=self.spreadsheet_id, range="Customers!A:D"
             ).execute()
             rows = result.get('values', [])
             
@@ -516,11 +480,11 @@ class GoogleSheetsService:
             
             new_id = str(max_id + 1)
             
-            # 3. Append the new customer row
-            body = {'values': [[new_id, name]]}
+            # 3. Append the new customer row preserving exact A:D structure (ID, Name, Phone, Address)
+            body = {'values': [[new_id, name, phone or "", address or ""]]}
             self.service.spreadsheets().values().append(
                 spreadsheetId=self.spreadsheet_id,
-                range="Customers!A:B",
+                range="Customers!A:D",
                 valueInputOption="USER_ENTERED",
                 body=body
             ).execute()
@@ -540,7 +504,7 @@ class GoogleSheetsService:
         if not self.service: return mapping
         try:
             result = self.service.spreadsheets().values().get(
-                spreadsheetId=self.spreadsheet_id, range="Customers!A:B"
+                spreadsheetId=self.spreadsheet_id, range="Customers!A:D"
             ).execute()
             rows = result.get('values', [])
             
@@ -566,7 +530,7 @@ class GoogleSheetsService:
         if not self.service or not customer_id: return None
         try:
             result = self.service.spreadsheets().values().get(
-                spreadsheetId=self.spreadsheet_id, range="A:O"
+                spreadsheetId=self.spreadsheet_id, range="'Orders'!A:O"
             ).execute()
             rows = result.get('values', [])
             
@@ -663,9 +627,9 @@ class GoogleSheetsService:
         try:
             customer_map = self.get_all_customers_map()
             
-            # 1. Fetch Orders (Sheet1)
+            # 1. Fetch Orders
             result = self.service.spreadsheets().values().get(
-                spreadsheetId=self.spreadsheet_id, range="A:K"
+                spreadsheetId=self.spreadsheet_id, range="'Orders'!A:K"
             ).execute()
             rows = result.get('values', [])
             
@@ -770,7 +734,7 @@ class GoogleSheetsService:
         try:
             customer_map = self.get_all_customers_map()
             result = self.service.spreadsheets().values().get(
-                spreadsheetId=self.spreadsheet_id, range="A:K"
+                spreadsheetId=self.spreadsheet_id, range="'Orders'!A:K"
             ).execute()
             rows = result.get('values', [])
             pending = {}
@@ -812,7 +776,7 @@ class GoogleSheetsService:
         try:
             customer_map = self.get_all_customers_map()
             result = self.service.spreadsheets().values().get(
-                spreadsheetId=self.spreadsheet_id, range="B:K"
+                spreadsheetId=self.spreadsheet_id, range="'Orders'!B:K"
             ).execute()
             rows = result.get('values', [])
             
@@ -849,7 +813,7 @@ class GoogleSheetsService:
                     body = {'values': [["Completed"]]}
                     self.service.spreadsheets().values().update(
                         spreadsheetId=self.spreadsheet_id,
-                        range=f"K{row_num}",
+                        range=f"'Orders'!K{row_num}",
                         valueInputOption="USER_ENTERED",
                         body=body
                     ).execute()
@@ -861,3 +825,205 @@ class GoogleSheetsService:
         except Exception as e:
             print(f"[SheetsAPI] mark_invoicing_completed failed: {e}")
             return 0
+
+    # -------------------------------------------------------------------------
+    # NEW TABS INTEGRATION: Config, Sales_Ledger, Expense_Ledger, Vendors
+    # (Maintains 100% strict column invariance for CJS Accountant)
+    # -------------------------------------------------------------------------
+
+    def get_config_variables(self) -> dict:
+        """
+        Fetches system variables from the 'Config' tab (Col A=Variable Name, Col B=Value, Col C=Last Updated).
+        Returns a dictionary mapping Variable Name -> Value (coerced to float/int if numeric, else string).
+        Example: {"Cost per 1000 Stitches": 10.0, "Hourly Labor Rate": 100.0, "GST Rate Percent": 18.0, "Studio Name": "CJS Designs"}
+        """
+        config = {}
+        if not self.service: return config
+        try:
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id,
+                range="'Config'!A:B"
+            ).execute()
+            rows = result.get('values', [])
+            for i, row in enumerate(rows):
+                if i == 0 or len(row) < 2: continue
+                var_name = str(row[0]).strip()
+                var_val_str = str(row[1]).strip()
+                try:
+                    var_val = float(var_val_str)
+                    if var_val.is_integer():
+                        var_val = int(var_val)
+                except ValueError:
+                    var_val = var_val_str
+                config[var_name] = var_val
+            print(f"[SheetsAPI] Loaded {len(config)} variables from 'Config' tab.")
+            return config
+        except Exception as e:
+            print(f"[SheetsAPI] get_config_variables failed: {e}")
+            return config
+
+    def get_sales_ledger(self, limit: int = 50) -> list:
+        """
+        Reads records from 'Sales_Ledger'!A:K.
+        Columns: Date, Invoice ID, Customer, Service Type, Total Stitches, Labor Hrs, Margin %, Net Price, GST, Courier, Gross Total.
+        """
+        sales = []
+        if not self.service: return sales
+        try:
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id,
+                range="'Sales_Ledger'!A:K"
+            ).execute()
+            rows = result.get('values', [])
+            for i, row in enumerate(rows):
+                if i == 0 or not row: continue
+                sales.append({
+                    "date": row[0] if len(row) > 0 else "",
+                    "invoice_id": row[1] if len(row) > 1 else "",
+                    "customer": row[2] if len(row) > 2 else "",
+                    "service_type": row[3] if len(row) > 3 else "",
+                    "total_stitches": int(row[4]) if len(row) > 4 and str(row[4]).isdigit() else 0,
+                    "labor_hrs": float(row[5]) if len(row) > 5 and str(row[5]).replace(".", "", 1).isdigit() else 0.0,
+                    "margin_pct": float(row[6]) if len(row) > 6 and str(row[6]).replace(".", "", 1).isdigit() else 0.0,
+                    "net_price": float(row[7]) if len(row) > 7 and str(row[7]).replace(".", "", 1).isdigit() else 0.0,
+                    "gst": float(row[8]) if len(row) > 8 and str(row[8]).replace(".", "", 1).isdigit() else 0.0,
+                    "courier": float(row[9]) if len(row) > 9 and str(row[9]).replace(".", "", 1).isdigit() else 0.0,
+                    "gross_total": float(row[10]) if len(row) > 10 and str(row[10]).replace(".", "", 1).isdigit() else 0.0,
+                })
+            return sales[-limit:]
+        except Exception as e:
+            print(f"[SheetsAPI] get_sales_ledger failed: {e}")
+            return sales
+
+    def record_sale_in_ledger(self, date_str: str, invoice_id: str, customer_name: str, service_type: str, total_stitches: int, labor_hrs: float, margin_pct: float, net_price: float, gst: float, courier: float, gross_total: float) -> bool:
+        """
+        Appends an invoice record into 'Sales_Ledger'!A:K.
+        Guarantees exact preservation of CJS Accountant column ordering:
+        A: Date, B: Invoice ID, C: Customer, D: Service Type, E: Total Stitches,
+        F: Labor Hrs, G: Margin %, H: Net Price, I: GST, J: Courier, K: Gross Total.
+        """
+        if not self.service: return False
+        try:
+            values = [[
+                date_str,
+                invoice_id,
+                customer_name,
+                service_type,
+                str(total_stitches),
+                str(labor_hrs),
+                str(margin_pct),
+                str(net_price),
+                str(gst),
+                str(courier),
+                str(gross_total)
+            ]]
+            body = {'values': values}
+            self.service.spreadsheets().values().append(
+                spreadsheetId=self.spreadsheet_id,
+                range="'Sales_Ledger'!A:K",
+                valueInputOption="USER_ENTERED",
+                body=body
+            ).execute()
+            print(f"[SheetsAPI] Appended invoice {invoice_id} to 'Sales_Ledger'.")
+            return True
+        except Exception as e:
+            print(f"[SheetsAPI] record_sale_in_ledger failed: {e}")
+            return False
+
+    def get_vendors(self) -> list:
+        """
+        Reads supplier/vendor records from 'Vendors'!A:F.
+        Columns: Vendor ID, Name, Category, Contact Person, Phone, Address.
+        """
+        vendors = []
+        if not self.service: return vendors
+        try:
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id,
+                range="'Vendors'!A:F"
+            ).execute()
+            rows = result.get('values', [])
+            for i, row in enumerate(rows):
+                if i == 0 or not row: continue
+                vendors.append({
+                    "vendor_id": row[0] if len(row) > 0 else "",
+                    "name": row[1] if len(row) > 1 else "",
+                    "category": row[2] if len(row) > 2 else "",
+                    "contact_person": row[3] if len(row) > 3 else "",
+                    "phone": row[4] if len(row) > 4 else "",
+                    "address": row[5] if len(row) > 5 else "",
+                })
+            return vendors
+        except Exception as e:
+            print(f"[SheetsAPI] get_vendors failed: {e}")
+            return vendors
+
+    def get_recent_expenses(self, limit: int = 50) -> list:
+        """
+        Reads expense records from 'Expense_Ledger'!A:E.
+        Columns: Date, Expense Category, Description, Amount, Payment Method.
+        """
+        expenses = []
+        if not self.service: return expenses
+        try:
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id,
+                range="'Expense_Ledger'!A:E"
+            ).execute()
+            rows = result.get('values', [])
+            for i, row in enumerate(rows):
+                if i == 0 or not row: continue
+                expenses.append({
+                    "date": row[0] if len(row) > 0 else "",
+                    "category": row[1] if len(row) > 1 else "",
+                    "description": row[2] if len(row) > 2 else "",
+                    "amount": float(row[3]) if len(row) > 3 and str(row[3]).replace(".", "", 1).isdigit() else row[3] if len(row) > 3 else 0.0,
+                    "payment_method": row[4] if len(row) > 4 else "",
+                })
+            return expenses[-limit:]
+        except Exception as e:
+            print(f"[SheetsAPI] get_recent_expenses failed: {e}")
+            return expenses
+
+    def get_active_orders_summary(self, limit: int = 5) -> list:
+        """
+        Fetches the most recent active/in-progress orders (not completed/invoiced)
+        from 'Orders'!A:O to present as quick-select options for Boss.
+        """
+        active_orders = []
+        if not self.service: return active_orders
+        try:
+            customer_map = self.get_all_customers_map()
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id,
+                range="'Orders'!A:O"
+            ).execute()
+            rows = result.get('values', [])
+            for i, row in enumerate(rows):
+                if i == 0 or len(row) < 2: continue
+                status = str(row[10]).strip().lower() if len(row) > 10 else ""
+                if status in ("completed", "invoiced"): continue
+                
+                oid = row[1].strip()
+                cid = row[2].strip() if len(row) > 2 else "Unknown"
+                cname = customer_map.get(cid, cid)
+                fabric = row[4] if len(row) > 4 else "Unknown"
+                embroidery = row[5] if len(row) > 5 else "Unknown"
+                machine = row[7] if len(row) > 7 else "Pending"
+                delivery = row[8] if len(row) > 8 else "Unknown"
+                cost = row[9] if len(row) > 9 else "Rs 0"
+                
+                active_orders.append({
+                    "order_id": oid,
+                    "customer": cname,
+                    "fabric": fabric,
+                    "embroidery": embroidery,
+                    "machine": machine,
+                    "delivery_date": delivery,
+                    "cost": cost
+                })
+            # Return most recent ones
+            return active_orders[-limit:]
+        except Exception as e:
+            print(f"[SheetsAPI] get_active_orders_summary failed: {e}")
+            return active_orders

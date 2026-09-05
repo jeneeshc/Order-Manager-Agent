@@ -11,3 +11,8 @@ env/
 test_sheets.py
 test_agent.py
 send_test.py
+ngrok.exe
+.pytest_cache/
+.benchmarks/
+*.json.log
+prod_logs*.json

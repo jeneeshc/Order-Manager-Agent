@@ -17,6 +17,7 @@ class AgentState(BaseModel):
     embroidery_type: Optional[str] = None
     stitch_count: Optional[int] = None
     quantity: Optional[int] = None
+    labor_hours: Optional[float] = None
     requested_delivery_date: Optional[str] = None
     order_id: Optional[str] = None
     
@@ -26,6 +27,8 @@ class AgentState(BaseModel):
     aggregated_reasoning: str = Field(default="")
     
     # Agent 3 updates these: Costing
+    base_cost_rs: Optional[float] = None
+    gst_amount_rs: Optional[float] = None
     total_cost_rs: Optional[float] = None
     
     # Agent 4 & 5 updates these: Media & Invoicing
@@ -52,6 +55,11 @@ class AgentState(BaseModel):
     # supervisor-led orchestration fields
     next_step: str = Field(default="supervisor")
     worker_feedback: str = Field(default="")
+
+    # Hierarchical Menu & Form-Driven Workflow State
+    active_menu: Optional[str] = Field(default=None)  # "MAIN", "ADJUST", "INVOICING", "VENDORS", etc.
+    pending_adjustment_type: Optional[str] = None     # "delivery_date", "machine", "cost"
+    pending_adjustment_order_id: Optional[str] = None # Currently targeted Order ID for adjustment
 
     # -------------------------------------------------------------------------
     # FINAL REPLY CONTRACT  (see docs/AGENT_DEVELOPMENT.md for full details)

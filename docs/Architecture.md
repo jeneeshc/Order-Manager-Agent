@@ -7,12 +7,13 @@
 ```mermaid
 graph TD
     %% External Interfaces
-    Siny((Siny\nProprietor)) <-->|WhatsApp\nText / Voice| WA[Meta WhatsApp\nCloud API v22.0]
+    Siny((Siny\nProprietor)) <-->|WhatsApp\nText / Voice / Flows| WA[Meta WhatsApp\nCloud API v22.0]
 
     %% GCP Infrastructure
     subgraph GCP [Google Cloud Platform — Cloud Run]
-        WA <-->|POST /webhook| API[FastAPI\nWebhook Handler]
+        WA <-->|POST /webhook| API[FastAPI Webhook &\nFlows Controller]
         API -.->|Immediate Ack| WA
+        API -.->|Interactive Form / Flow| WA
         API -->|invoke| Graph
 
         subgraph Graph [LangGraph — Supervisor-Led Loopback Graph]
@@ -38,14 +39,17 @@ graph TD
         SCHED -->|send brief| WA
     end
 
-    %% External Services
-    GSheets[(Google Sheets\nOrders / Holidays\nReminders / Costing\nCustomers)]
+    %% External Applications & Services
+    CJSAcc[CJS Accountant\nWeb / Accounting App]
+    GSheets[(Google Sheets Shared DB\nOrders / Customers / Config\nSales_Ledger / Expense_Ledger\nVendors / Holidays\nReminders / Assets)]
     Memory[(MemoryService\nSession Persistence)]
 
-    COL <-->|read/write| GSheets
-    SCH <-->|read| GSheets
-    EST <-->|read Costing tab| GSheets
-    SEC <-->|read all tabs| GSheets
+    CJSAcc <-->|read/write ledgers & config| GSheets
+    COL <-->|read/write Orders & Customers| GSheets
+    SCH <-->|read Orders & Holidays| GSheets
+    EST <-->|read Config| GSheets
+    INV <-->|sync Sales_Ledger & Orders| GSheets
+    SEC <-->|read Orders, Holidays, Reminders| GSheets
     API <-->|read/write| GSheets
     API <-->|get/set/clear| Memory
 

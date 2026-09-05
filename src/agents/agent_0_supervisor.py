@@ -106,7 +106,10 @@ class SupervisorAgent:
             state.is_payment_query,
             state.is_secretary_query,
             state.is_pending_invoicing_query,
-            state.is_invoicing_done_update
+            state.is_invoicing_done_update,
+            bool(state.active_menu),
+            bool(state.final_reply),
+            state.send_order_form
         ])
 
         if is_order_creation and next_step in {"scheduler", "estimator", "END"} and not state.is_missing_info:
@@ -125,10 +128,10 @@ class SupervisorAgent:
                 next_step = "collector"
                 reasoning = f"Guardrail overridden to collector due to missing required fields: {', '.join(missing_fields)}"
 
-        # If a final reply has already been formulated by a worker agent, force termination
-        if state.final_reply:
+        # If a final reply or order form has already been formulated, force termination
+        if state.final_reply or state.send_order_form or (state.active_menu and not state.is_secretary_query):
             next_step = "END"
-            reasoning = "Final reply is ready, routing to END."
+            reasoning = "Final reply or form/menu ready, routing to END."
 
         print(f"[{self.name}] Supervisor Routing Decision: {next_step} (original: {decision.next_step}, reasoning: {reasoning})")
         
@@ -156,9 +159,12 @@ class SupervisorAgent:
                 STATE DETAILS:
                 - Order ID: {state.order_id or 'New Order'}
                 - Est. Completion: {state.estimated_completion_date or 'N/A'}
-                - Total Cost: Rs {state.total_cost_rs or 'N/A'}
                 - Material: {state.fabric_type or 'N/A'}
                 - Stitches: {state.stitch_count or 'N/A'}
+                - Labor Hours: {state.labor_hours or 0.0} hrs
+                - Base Cost: Rs {state.base_cost_rs or 'N/A'}
+                - GST Amount: Rs {state.gst_amount_rs or 'N/A'}
+                - Total Cost: Rs {state.total_cost_rs or 'N/A'}
                 - Invoicing Status: {state.invoice_status or 'N/A'}
                 
                 If it was an order, confirm it's saved and give Boss the key details (ID, date, cost).

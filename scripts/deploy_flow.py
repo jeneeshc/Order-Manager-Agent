@@ -78,6 +78,13 @@ FLOW_JSON = {
                                 "required": True
                             },
                             {
+                                "type": "TextInput",
+                                "name": "hours_required",
+                                "label": "Hours Required (Labor)",
+                                "input-type": "number",
+                                "required": True
+                            },
+                            {
                                 "type": "DatePicker",
                                 "name": "delivery_date",
                                 "label": "Expected Delivery Date",
@@ -96,6 +103,7 @@ FLOW_JSON = {
                                 "garment_type": "${form.garment_type}",
                                 "embroidery_style": "${form.embroidery_style}",
                                 "stitch_count": "${form.stitch_count}",
+                                "hours_required": "${form.hours_required}",
                                 "delivery_date": "${form.delivery_date}"
                             }
                         }

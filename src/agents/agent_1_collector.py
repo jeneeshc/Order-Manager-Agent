@@ -11,6 +11,7 @@ class OrderExtractionModel(BaseModel):
     fabric_type: Optional[str] = Field(None, description="Material/fabric type.")
     embroidery_type: Optional[str] = Field(None, description="Embroidery style/type. Do NOT include garment type (e.g., Kurty).")
     stitch_count: Optional[int] = Field(None, description="Total stitch count (numeric).")
+    labor_hours: Optional[float] = Field(None, description="Labor hours or hours required to complete the work (numeric).")
     quantity: Optional[int] = Field(None, description="Total number of items (numeric).")
     requested_delivery_date: Optional[str] = Field(None, description="Delivery date/day.")
     referenced_order_id: Optional[str] = Field(None, description="Existing Order ID (e.g., CJS-12345) mentioned.")
@@ -37,6 +38,74 @@ def sanitize_customer_name(name: Optional[str]) -> Optional[str]:
         return None
     return name_clean
 
+MAIN_MENU_TEXT = (
+    "🧵 *CJS Designs — Order Manager* 🧵\n"
+    "Hello Boss! How can I assist you today? Please reply with a number:\n\n"
+    "1️⃣ *New Order Form* (Form with Fabric & Style dropdowns)\n"
+    "2️⃣ *Adjust Existing Order* (Change Date, Machine, Cost, or Reasoning)\n"
+    "3️⃣ *Invoicing & Billing* (Pending Invoices, Mark Invoiced/Paid, Debtors)\n"
+    "4️⃣ *Daily Briefing & Tasks* (Today's summary, queues, and reminders)\n"
+    "5️⃣ *Vendors & Expenses* (View suppliers or recent cash outflows)\n\n"
+    "_Reply with the number (e.g. 1, 2) or type a command directly._"
+)
+
+ADJUST_MENU_TEXT = (
+    "⚙️ *Order Adjustments Menu*\n"
+    "Boss, which adjustment would you like to make?\n\n"
+    "1️⃣ *Change Delivery Date* (Code: 21)\n"
+    "2️⃣ *Reassign Machine* — Ricoma ↔ Aakruthi (Code: 22)\n"
+    "3️⃣ *Override Cost* — Manual quote / discount (Code: 23)\n"
+    "4️⃣ *Explain Reasoning* — Audit schedule & pricing math (Code: 24)\n"
+    "0️⃣ *Back to Main Menu*\n\n"
+    "_Reply with a number (e.g., 1 or 21)_"
+)
+
+INVOICING_MENU_TEXT = (
+    "📋 *Invoicing & Billing Menu*\n"
+    "Boss, what financial action would you like to take?\n\n"
+    "1️⃣ *Pending Invoicing Report* — Completed orders awaiting bill (Code: 31)\n"
+    "2️⃣ *Mark Order as Invoiced* (Code: 32)\n"
+    "3️⃣ *Mark Order as Paid / Completed* (Code: 33)\n"
+    "4️⃣ *Debtors & Pending Dues* — Who owes us money? (Code: 34)\n"
+    "0️⃣ *Back to Main Menu*\n\n"
+    "_Reply with a number (e.g., 1 or 31)_"
+)
+
+VENDORS_MENU_TEXT = (
+    "🏢 *Vendors & Expenses Menu*\n"
+    "Boss, please select an option:\n\n"
+    "1️⃣ *Active Vendors Directory* (Code: 51)\n"
+    "2️⃣ *Recent Expenses* — Latest purchase records (Code: 52)\n"
+    "0️⃣ *Back to Main Menu*\n\n"
+    "_Reply with a number (e.g., 1 or 51)_"
+)
+
+def render_active_orders_prompt(title: str, db: GoogleSheetsService):
+    active_orders = db.get_active_orders_summary(limit=5)
+    if not active_orders:
+        return None, (
+            "Boss, there are no active orders in the queue right now! 📭\n"
+            "Reply *'Hi'* to return to the main menu."
+        )
+    lines = [f"{title}\n"]
+    for idx, o in enumerate(active_orders, 1):
+        lines.append(
+            f"{idx}️⃣ *{o['order_id']}* — {o['customer']} ({o['fabric']}, {o['embroidery']}) | Due: {o['delivery_date']} | Machine: {o['machine']}"
+        )
+    lines.append("0️⃣ *Back to Main Menu*\n")
+    lines.append(f"_Reply with the number (1-{len(active_orders)}) or type the Order ID._")
+    return active_orders, "\n".join(lines)
+
+def resolve_selected_order(raw_msg: str, active_orders: list) -> Optional[str]:
+    msg = raw_msg.strip()
+    if msg.isdigit():
+        idx = int(msg)
+        if 1 <= idx <= len(active_orders):
+            return active_orders[idx - 1]["order_id"]
+    if msg.upper().startswith("CJS-"):
+        return msg.upper()
+    return None
+
 class OrderCollectorAgent:
     def __init__(self):
         self.name = "Order Collector Agent"
@@ -52,6 +121,304 @@ class OrderCollectorAgent:
         self.extractor = self.llm.with_structured_output(OrderExtractionModel)
 
     def process(self, state: AgentState) -> AgentState:
+        raw_msg = (state.raw_message or "").strip()
+        msg_lower = raw_msg.lower()
+
+        # 0. Global Cancellation & Exit
+        if msg_lower in {"cancel", "exit", "stop"}:
+            state.active_menu = None
+            state.pending_adjustment_type = None
+            state.pending_adjustment_order_id = None
+            state.final_reply = "Operation cancelled, Boss. Reply *'Hi'* anytime to see the menu. 👍"
+            return state
+
+        # 0.1 Greetings / Main Menu Trigger
+        if msg_lower in {"hi", "hello", "menu", "help", "start", "hey"}:
+            state.active_menu = "MAIN"
+            state.pending_adjustment_type = None
+            state.pending_adjustment_order_id = None
+            state.final_reply = MAIN_MENU_TEXT
+            return state
+
+        # 0.2 Return to Main Menu (0 pressed from any sub-state)
+        if raw_msg == "0" and state.active_menu:
+            state.active_menu = "MAIN"
+            state.pending_adjustment_type = None
+            state.pending_adjustment_order_id = None
+            state.final_reply = MAIN_MENU_TEXT
+            return state
+
+        db = GoogleSheetsService()
+
+        # 0.3 Direct Fast-Action Codes (Can be invoked from anywhere)
+        if raw_msg == "21" or (state.active_menu == "ADJUST" and raw_msg == "1"):
+            orders, prompt_text = render_active_orders_prompt("📅 *Select Order to Change Delivery Date:*", db)
+            if not orders:
+                state.active_menu = None
+                state.final_reply = prompt_text
+                return state
+            state.active_menu = "SELECT_ORDER_FOR_DATE"
+            state.final_reply = prompt_text
+            return state
+
+        if raw_msg == "22" or (state.active_menu == "ADJUST" and raw_msg == "2"):
+            orders, prompt_text = render_active_orders_prompt("🧵 *Select Order to Reassign Machine:*", db)
+            if not orders:
+                state.active_menu = None
+                state.final_reply = prompt_text
+                return state
+            state.active_menu = "SELECT_ORDER_FOR_MACHINE"
+            state.final_reply = prompt_text
+            return state
+
+        if raw_msg == "23" or (state.active_menu == "ADJUST" and raw_msg == "3"):
+            orders, prompt_text = render_active_orders_prompt("💰 *Select Order to Override Cost:*", db)
+            if not orders:
+                state.active_menu = None
+                state.final_reply = prompt_text
+                return state
+            state.active_menu = "SELECT_ORDER_FOR_COST"
+            state.final_reply = prompt_text
+            return state
+
+        if raw_msg == "24" or (state.active_menu == "ADJUST" and raw_msg == "4"):
+            orders, prompt_text = render_active_orders_prompt("🔍 *Select Order to Review Reasoning Log:*", db)
+            if not orders:
+                state.active_menu = None
+                state.final_reply = prompt_text
+                return state
+            state.active_menu = "SELECT_ORDER_FOR_EXPLAIN"
+            state.final_reply = prompt_text
+            return state
+
+        if raw_msg == "31" or (state.active_menu == "INVOICING" and raw_msg == "1"):
+            state.is_pending_invoicing_query = True
+            state.active_menu = None
+            return state
+
+        if raw_msg == "32" or (state.active_menu == "INVOICING" and raw_msg == "2"):
+            orders, prompt_text = render_active_orders_prompt("📋 *Select Order to Mark as Invoiced:*", db)
+            if not orders:
+                state.active_menu = None
+                state.final_reply = prompt_text
+                return state
+            state.active_menu = "SELECT_ORDER_TO_INVOICE"
+            state.final_reply = prompt_text
+            return state
+
+        if raw_msg == "33" or (state.active_menu == "INVOICING" and raw_msg == "3"):
+            orders, prompt_text = render_active_orders_prompt("✅ *Select Order to Mark as Completed / Paid:*", db)
+            if not orders:
+                state.active_menu = None
+                state.final_reply = prompt_text
+                return state
+            state.active_menu = "SELECT_ORDER_TO_COMPLETE"
+            state.final_reply = prompt_text
+            return state
+
+        if raw_msg == "34" or (state.active_menu == "INVOICING" and raw_msg == "4"):
+            state.is_payment_query = True
+            state.active_menu = None
+            return state
+
+        if raw_msg == "51" or (state.active_menu == "VENDORS" and raw_msg == "1"):
+            vendors = db.get_all_vendors()
+            if not vendors:
+                state.final_reply = "Boss, no vendors are currently registered in 'Vendors' tab."
+            else:
+                v_lines = []
+                for v in vendors:
+                    v_lines.append(f"• *{v.get('name', 'Unknown')}* ({v.get('category', 'General')}) — Ph: {v.get('phone', 'N/A')}")
+                state.final_reply = "🧵 *Active Vendors Directory*\n\n" + "\n".join(v_lines)
+            state.active_menu = None
+            return state
+
+        if raw_msg == "52" or (state.active_menu == "VENDORS" and raw_msg == "2"):
+            expenses = db.get_recent_expenses(limit=5)
+            if not expenses:
+                state.final_reply = "Boss, no recent expenses found in 'Expense_Ledger'."
+            else:
+                e_lines = []
+                for e in expenses:
+                    e_lines.append(f"• *{e.get('date', '')}*: Rs {e.get('amount', 0)} — {e.get('description', '')} ({e.get('category', '')})")
+                state.final_reply = "💸 *Recent Expenses (Expense Ledger)*\n\n" + "\n".join(e_lines)
+            state.active_menu = None
+            return state
+
+        # 0.4 Handling Main Menu numeric choices
+        if state.active_menu == "MAIN":
+            if raw_msg == "1":
+                state.send_order_form = True
+                state.active_menu = None
+                state.final_reply = (
+                    "Opening WhatsApp Order Form for you, Boss! 📋\n"
+                    "Please fill in customer name, fabric, embroidery style, and stitches."
+                )
+                return state
+            elif raw_msg == "2":
+                state.active_menu = "ADJUST"
+                state.final_reply = ADJUST_MENU_TEXT
+                return state
+            elif raw_msg == "3":
+                state.active_menu = "INVOICING"
+                state.final_reply = INVOICING_MENU_TEXT
+                return state
+            elif raw_msg == "4":
+                state.is_secretary_query = True
+                state.active_menu = None
+                return state
+            elif raw_msg == "5":
+                state.active_menu = "VENDORS"
+                state.final_reply = VENDORS_MENU_TEXT
+                return state
+
+        # 0.5 Handling Selection States (Order selection & input prompts)
+        if state.active_menu == "SELECT_ORDER_FOR_DATE":
+            orders = db.get_active_orders_summary(limit=5)
+            target_id = resolve_selected_order(raw_msg, orders)
+            if target_id:
+                state.pending_adjustment_order_id = target_id
+                state.pending_adjustment_type = "delivery_date"
+                state.active_menu = "INPUT_NEW_DATE"
+                state.final_reply = f"Selected order *{target_id}*.\nPlease reply with the new delivery date (e.g. *2026-09-15* or *Friday*):"
+                return state
+            else:
+                state.final_reply = f"Boss, please reply with a number (1-{len(orders)}) or Order ID, or '0' for main menu."
+                return state
+
+        if state.active_menu == "INPUT_NEW_DATE":
+            new_date = raw_msg
+            target_oid = state.pending_adjustment_order_id
+            state.is_field_override = True
+            state.order_id = target_oid
+            state.override_field = "delivery_date"
+            state.override_value = new_date
+            state.active_menu = None
+            state.pending_adjustment_order_id = None
+            state.pending_adjustment_type = None
+            state.final_reply = f"✅ *Field Updated!*\nOrder *{target_oid}* — *Delivery Date* has been updated to *{new_date}*. 📅"
+            return state
+
+        if state.active_menu == "SELECT_ORDER_FOR_MACHINE":
+            orders = db.get_active_orders_summary(limit=5)
+            target_id = resolve_selected_order(raw_msg, orders)
+            if target_id:
+                state.pending_adjustment_order_id = target_id
+                state.pending_adjustment_type = "machine"
+                state.active_menu = "SELECT_MACHINE_CHOICE"
+                state.final_reply = (
+                    f"Selected order *{target_id}*.\n"
+                    f"Which machine would you like to assign?\n\n"
+                    f"1️⃣ *Ricoma*\n"
+                    f"2️⃣ *Aakruthi*\n"
+                    f"0️⃣ *Cancel*\n\n"
+                    f"_Reply 1 or 2._"
+                )
+                return state
+            else:
+                state.final_reply = f"Boss, please reply with a number (1-{len(orders)}) or Order ID, or '0' for main menu."
+                return state
+
+        if state.active_menu == "SELECT_MACHINE_CHOICE":
+            if raw_msg == "1":
+                machine = "Ricoma"
+            elif raw_msg == "2":
+                machine = "Aakruthi"
+            elif msg_lower in ("ricoma", "aakruthi"):
+                machine = raw_msg.title()
+            else:
+                state.final_reply = "Please reply with *1* for Ricoma or *2* for Aakruthi (or '0' to cancel)."
+                return state
+            target_oid = state.pending_adjustment_order_id
+            state.is_field_override = True
+            state.order_id = target_oid
+            state.override_field = "machine"
+            state.override_value = machine
+            state.active_menu = None
+            state.pending_adjustment_order_id = None
+            state.pending_adjustment_type = None
+            state.final_reply = f"✅ *Machine Reassigned!*\nOrder *{target_oid}* has been reassigned to *{machine}*. 🧵"
+            return state
+
+        if state.active_menu == "SELECT_ORDER_FOR_COST":
+            orders = db.get_active_orders_summary(limit=5)
+            target_id = resolve_selected_order(raw_msg, orders)
+            if target_id:
+                state.pending_adjustment_order_id = target_id
+                state.pending_adjustment_type = "cost"
+                state.active_menu = "INPUT_NEW_COST"
+                state.final_reply = f"Selected order *{target_id}*.\nPlease reply with the new total cost in Rs (e.g. *650*):"
+                return state
+            else:
+                state.final_reply = f"Boss, please reply with a number (1-{len(orders)}) or Order ID, or '0' for main menu."
+                return state
+
+        if state.active_menu == "INPUT_NEW_COST":
+            cost_str = "".join(c for c in raw_msg if c.isdigit() or c == '.')
+            if not cost_str:
+                cost_str = raw_msg
+            target_oid = state.pending_adjustment_order_id
+            state.is_field_override = True
+            state.order_id = target_oid
+            state.override_field = "cost"
+            state.override_value = f"Rs {cost_str}"
+            state.active_menu = None
+            state.pending_adjustment_order_id = None
+            state.pending_adjustment_type = None
+            state.final_reply = f"✅ *Cost Updated!*\nOrder *{target_oid}* — *Cost* has been updated to *Rs {cost_str}*. 💰"
+            return state
+
+        if state.active_menu == "SELECT_ORDER_FOR_EXPLAIN":
+            orders = db.get_active_orders_summary(limit=5)
+            target_id = resolve_selected_order(raw_msg, orders)
+            if target_id:
+                state.is_explanation_request = True
+                state.order_id = target_id
+                state.active_menu = None
+                state.pending_adjustment_order_id = None
+                state.final_reply = (
+                    f"🔍 *Order Reasoning — {target_id}*\n\n"
+                    f"I've retrieved the full agent decision log for this order. "
+                    f"You can review the scheduling, costing, and machine assignment reasoning in your Orders sheet, Column L."
+                )
+                return state
+            else:
+                state.final_reply = f"Boss, please reply with a number (1-{len(orders)}) or Order ID, or '0' for main menu."
+                return state
+
+        if state.active_menu == "SELECT_ORDER_TO_INVOICE":
+            orders = db.get_active_orders_summary(limit=5)
+            target_id = resolve_selected_order(raw_msg, orders)
+            if target_id:
+                state.is_status_update = True
+                state.new_invoice_status = "Invoiced"
+                state.order_id = target_id
+                state.active_menu = None
+                state.final_reply = f"✅ *Status Updated!*\nOrder *{target_id}* has been marked as *Invoiced*. 📋"
+                return state
+            else:
+                state.final_reply = f"Boss, please reply with a number (1-{len(orders)}) or Order ID, or '0' for main menu."
+                return state
+
+        if state.active_menu == "SELECT_ORDER_TO_COMPLETE":
+            orders = db.get_active_orders_summary(limit=5)
+            target_id = resolve_selected_order(raw_msg, orders)
+            if target_id:
+                state.is_status_update = True
+                state.new_invoice_status = "Completed"
+                state.order_id = target_id
+                state.active_menu = None
+                state.final_reply = f"✅ *Status Updated!*\nOrder *{target_id}* has been marked as *Completed*. 📋"
+                return state
+            else:
+                state.final_reply = f"Boss, please reply with a number (1-{len(orders)}) or Order ID, or '0' for main menu."
+                return state
+
+        # Clear active menu if unrecognized text was sent (e.g. Boss typed a freeform order or intent)
+        state.active_menu = None
+        state.pending_adjustment_type = None
+        state.pending_adjustment_order_id = None
+
         print(f"[{self.name}] Activating Gemini LLM on: {state.raw_message}")
         
         # Build prompt focused strictly on extraction results
@@ -72,7 +439,8 @@ class OrderCollectorAgent:
         5. If the message is asking for details or a report of orders pending for invoicing, set 'is_pending_invoicing_query=True'.
         6. If the message indicates that invoicing is done (e.g. "invoicing is done for Anna", "invoicing done all", "invoiced Anna"), set 'is_invoicing_done_update=True' and set 'invoicing_done_customer' to the customer name (e.g., "Anna") or 'all' if for all customers.
         7. If the message asks to mark a specific order as complete or says a specific order is complete/completed (e.g., "mark CJS-7ED337 as complete", "CJS-7ED337 is complete"), set 'mark_as_completed=True' and set 'referenced_order_id' to that order ID.
-        8. Provide a helpful 'missing_fields_prompt' if key info is still absent.
+        8. If hours or duration required is mentioned (e.g., "2 hours", "3 hrs labor"), extract that into 'labor_hours'.
+        9. Provide a helpful 'missing_fields_prompt' if key info is still absent.
         """
         
         # Generative AI reads the human text and extracts the core fields
@@ -216,6 +584,9 @@ class OrderCollectorAgent:
         if extraction.quantity:
             state.quantity = extraction.quantity
             
+        if extraction.labor_hours is not None:
+            state.labor_hours = extraction.labor_hours
+
         if extraction.confirm_duplicate:
             state.is_duplicate_confirmed = True
 

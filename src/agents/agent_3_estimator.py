@@ -9,46 +9,48 @@ class EstimationAgent:
         """
         Agent 3 Logic:
         - Re-confirm stitch count natively.
-        - Cross-Pollinate Embroidery & Material matching exactly against Boss's Costing Tuple DB.
-        - Calculate cost = (Stitch Count / Unit Count) * Cost in Rupees.
+        - Dynamically fetch 'Cost per 1000 Stitches', 'Hourly Labor Rate', and 'GST Rate Percent' from Config tab.
+        - Calculate:
+            stitch_cost = (stitch_count / 1000) * cost_per_1000_stitches
+            labor_cost = labor_hours * hourly_labor_rate
+            base_cost = stitch_cost + labor_cost
+            gst_amount = base_cost * (gst_rate_percent / 100)
+            total_cost = base_cost + gst_amount
         """
         if not state.stitch_count: return state
             
-        print(f"[{self.name}] Connecting to Database for Dynamic Costing Combinatorics...")
+        print(f"[{self.name}] Connecting to Database to retrieve rates from Config tab...")
         
         db = GoogleSheetsService()
-        pricing_rules = db.get_costing_rules()
+        config = db.get_config_variables()
+        base_rate = float(config.get("Cost per 1000 Stitches", 10.0))
+        hourly_rate = float(config.get("Hourly Labor Rate", 100.0))
+        gst_rate = float(config.get("GST Rate Percent", 18.0))
         
-        target_emb = str(state.embroidery_type).strip().lower() if state.embroidery_type else ""
-        target_mat = str(state.fabric_type).strip().lower() if state.fabric_type else ""
+        stitch_cost = round((state.stitch_count / 1000.0) * base_rate, 2)
+        labor_hours = float(state.labor_hours or 0.0)
+        labor_cost = round(labor_hours * hourly_rate, 2)
         
-        # 1. Exact Combinatorial Match inside the 5-Column Database!
-        matched_rule = pricing_rules.get((target_emb, target_mat))
+        base_cost = round(stitch_cost + labor_cost, 2)
+        gst_amount = round(base_cost * (gst_rate / 100.0), 2)
+        total_cost = round(base_cost + gst_amount, 2)
         
-        if matched_rule:
-             print(f"[{self.name}] Natively Matched precise (Embroidery, Material) Tuple from cloud: {matched_rule}")
-             u_count = matched_rule["unit_count"]
-             u_cost = matched_rule["cost"]
-             state.total_cost_rs = round((state.stitch_count / u_count) * u_cost, 2)
-             estimator_log = (
-                 f"\n[Estimator Agent]: Pricing Lookup -> Matched exact combination "
-                 f"('{state.embroidery_type}', '{state.fabric_type}') in Costing sheet. "
-                 f"Rule: {state.stitch_count} stitches / {u_count} units x Rs {u_cost} = Rs {state.total_cost_rs}. "
-                 f"Payment status set to 'Estimated'.\n"
-             )
-        else:
-             print(f"[{self.name}] Combinatorial pair ({target_emb}, {target_mat}) NOT natively mapped. Engaging Base fallback formula!")
-             state.total_cost_rs = round((state.stitch_count / 1000.0) * 8.0, 2)
-             estimator_log = (
-                 f"\n[Estimator Agent]: Pricing Lookup -> No exact match found for "
-                 f"('{state.embroidery_type}', '{state.fabric_type}') in Costing sheet. "
-                 f"Applied default fallback rate: {state.stitch_count} stitches / 1000 x Rs 8.0 = Rs {state.total_cost_rs}. "
-                 f"Payment status set to 'Estimated'.\n"
-             )
+        state.base_cost_rs = base_cost
+        state.gst_amount_rs = gst_amount
+        state.total_cost_rs = total_cost
+        
+        estimator_log = (
+            f"\n[Estimator Agent]: Calculated cost using Config parameters:\n"
+            f"• Stitching: {state.stitch_count} stitches / 1000 x Rs {base_rate} = Rs {stitch_cost}\n"
+            f"• Labor: {labor_hours} hrs x Rs {hourly_rate}/hr = Rs {labor_cost}\n"
+            f"• Subtotal: Rs {base_cost}\n"
+            f"• GST ({gst_rate}%): Rs {gst_amount}\n"
+            f"• Total Order Cost: Rs {total_cost}. Payment status set to 'Estimated'.\n"
+        )
              
         state.aggregated_reasoning += estimator_log
         state.invoice_status = "Estimated"
         
-        print(f"[{self.name}] Final Calculated Cost: Rs {state.total_cost_rs}")
+        print(f"[{self.name}] Final Calculated Cost: Rs {state.total_cost_rs} (Stitches: Rs {stitch_cost}, Labor: Rs {labor_cost}, GST: Rs {gst_amount})")
         
         return state

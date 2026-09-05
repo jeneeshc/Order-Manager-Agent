@@ -98,8 +98,20 @@ See `docs/AGENT_DEVELOPMENT.md` for the complete guide and template.
 #### Agent 1 — Collector (`agent_1_collector.py`)
 
 - **Model:** `gemini-flash-latest`, temperature=0
-- **Extraction model:** `OrderExtractionModel` (16 fields, all typed and optional)
-- **Intercept chain (strict priority, each returns early):**
+- **Extraction model:** `OrderExtractionModel` (typed Pydantic model)
+- **Deterministic Menu & Form Interceptor (Priority 0 — Zero LLM Latency):**
+  1. If message is greeting (`"hi"`, `"hello"`, `"menu"`, `"help"`, `"0"`) → sets `final_reply` to Main Menu (`1` to `5`); sets `state.active_menu = "MAIN"`.
+  2. If `state.active_menu == "MAIN"`:
+     - `"1"`: Sets `state.send_order_form = True` to launch native WhatsApp Flow form with dropdowns (Cotton/Silk/Net/Velvet, Floral/Neckline/Border, etc.) and DatePicker.
+     - `"2"`: Sets `final_reply` to Sub-Menu 2 (Adjust Order); sets `state.active_menu = "ADJUST"`.
+     - `"3"`: Sets `final_reply` to Sub-Menu 3 (Invoicing & Billing); sets `state.active_menu = "INVOICING"`.
+     - `"4"`: Sets `is_secretary_query = True` for instant daily tasks brief.
+     - `"5"`: Sets `final_reply` to Sub-Menu 5 (Vendors & Expenses); sets `state.active_menu = "VENDORS"`.
+  3. Direct Sub-Menu Codes:
+     - `"21"`, `"22"`, `"23"`, `"24"`: Adjust delivery date, machine, cost, or reasoning log. Presents dynamic choices of active orders.
+     - `"31"`, `"32"`, `"33"`, `"34"`: Pending report, mark invoiced, mark completed, or overdue accounts report.
+     - `"51"`, `"52"`: View vendors directory or recent expenses.
+- **LLM Intercept chain (Freeform text fallback):**
   1. `mark_as_invoiced` + order ID → status update + `final_reply`
   2. `explain_reasoning` + order ID → explanation request + `final_reply`
   3. `is_field_override` + all fields → field override + `final_reply`
@@ -115,17 +127,24 @@ See `docs/AGENT_DEVELOPMENT.md` for the complete guide and template.
 - **Machine speed:** 650 SPM
 - **Working hours/day:** 6
 - **Formula:** `days = max(1, round((stitches / 650 / 60) / 6))`
-- **Machine selection:** Reads all non-completed/non-invoiced orders from Sheets; picks earliest free date
-- **Holiday skipping:** Reads `Holidays!A:B` tab; also skips Sundays
+- **Machine selection:** Reads all non-completed/non-invoiced orders from `'Orders'!A:K`; picks earliest free date
+- **Holiday skipping:** Reads `'Holidays'!A:B` tab; also skips Sundays
 - **Outputs:** `state.machine_assigned`, `state.estimated_completion_date`
 
 #### Agent 3 — Estimator (`agent_3_estimator.py`)
 
 - **Pure Python (no LLM)**
-- **Pricing lookup:** `Costing!A:E` tab, matched by `(embroidery_type.lower(), fabric_type.lower())`
-- **Formula (exact match):** `cost = (stitches / unit_count) × cost_per_unit`
-- **Formula (fallback):** `cost = (stitches / 1000) × 8.0`
-- **Outputs:** `state.total_cost_rs`, `state.invoice_status = "Estimated"`
+- **Cost calculation:** Direct dynamic multi-factor formula sourced from `'Config'!A:C`:
+  - `base_rate = [Cost per 1000 Stitches]` (default: 10.0)
+  - `hourly_rate = [Hourly Labor Rate]` (default: 100.0)
+  - `gst_rate = [GST Rate Percent]` (default: 18.0)
+- **Formula:**
+  - $\text{stitch\_cost} = (\text{stitches} / 1000) \times \text{base\_rate}$
+  - $\text{labor\_cost} = \text{labor\_hours} \times \text{hourly\_rate}$
+  - $\text{subtotal} = \text{stitch\_cost} + \text{labor\_cost}$
+  - $\text{gst\_amount} = \text{subtotal} \times (\text{gst\_rate} / 100)$
+  - $\text{total\_cost} = \text{subtotal} + \text{gst\_amount}$
+- **Outputs:** `state.total_cost_rs`, `state.base_cost_rs`, `state.gst_amount_rs`, `state.invoice_status = "Estimated"`
 
 #### Agent 4 — Social Media (`agent_4_social_media.py`)
 
@@ -135,18 +154,19 @@ See `docs/AGENT_DEVELOPMENT.md` for the complete guide and template.
 
 #### Agent 5 — Invoicing (`agent_5_invoicing.py`)
 
-- **Status:** Stub — output contract in place, full payment ledger not yet built
+- **Role:** Payment reminders, pending invoicing queries, and synchronizing with `Sales_Ledger`
 - **Current:** Runs if `invoice_status == "pending"`, sets `state.invoice_status = "invoiced"`, sets `state.final_reply` with pickup reminder
-- **Planned:** Multi-customer outstanding receivables report, periodic payment polling
+- **Ledger Integration:** Syncs with `'Sales_Ledger'!A:K` (shared with CJS Accountant) for invoice records, gross totals, and GST calculation.
 
 #### Agent 6 — Secretary (`agent_6_secretary.py`)
 
 - **Model:** `gemini-flash-latest`, temperature=0.1
-- **Data sources (all from Sheets):**
-  - Orders due today (Col I == today)
-  - Pending invoices >7 days (not invoiced/completed)
-  - Holiday status (today) and upcoming holidays (next 7 days)
-  - Reminders from `Reminders!A:C` tab (date-based or "Nth of each month")
+- **Data sources (from Google Sheets):**
+  - Orders due today (Col I == today in `Orders`)
+  - Pending invoices >7 days (not invoiced/completed in `Orders`)
+  - Holiday status (today) and upcoming holidays (next 7 days from `Holidays`)
+  - Reminders from `'Reminders'!A:C` tab (date-based or "Nth of each month")
+  - Optional financial context from `'Sales_Ledger'` / `'Expense_Ledger'`
 - **Prompt rules:** Explicitly says "TODAY not tomorrow"; uses WhatsApp formatting (emojis, `*bold*`)
 - **Scheduled:** 6:00 AM IST daily via APScheduler (bypasses LangGraph — calls directly)
 - **On-demand:** Triggered by Supervisor when `is_secretary_query=True`
@@ -154,9 +174,9 @@ See `docs/AGENT_DEVELOPMENT.md` for the complete guide and template.
 
 ---
 
-### 5. Google Sheets Schema
+### 5. Google Sheets Schema (Shared with CJS Accountant)
 
-#### Sheet1 — Orders
+#### 1. Orders Tab — `Orders!A:O`
 
 | Col | Field | Type | Notes |
 |---|---|---|---|
@@ -166,44 +186,103 @@ See `docs/AGENT_DEVELOPMENT.md` for the complete guide and template.
 | D | Phone | String | Sender WhatsApp number |
 | E | Material | String | Fabric type |
 | F | Embroidery Type | String | Style |
-| G | Stitch Count | Integer | |
+| G | Stitch Count | Integer | Total stitches |
 | H | Machine | String | Ricoma / Aakruthi |
-| I | Est. Completion | String | `YYYY-MM-DD` |
-| J | Cost | String | `Rs X` |
+| I | Estimated Delivery Date | String | `YYYY-MM-DD` |
+| J | Estimated Cost | String | `Rs X` |
 | K | Payment Status | String | pending / Estimated / invoiced / Completed |
 | L | Reasoning Log | String | Appended agent audit trail |
-| M | Quantity | Integer | |
+| M | Override Delivery Date | String | Manual override date |
+| N | Override Cost (Rs) | String | Manual override cost |
+| O | Override Machine | String | Manual override machine |
 
-#### Holidays Tab — A:B
+#### 2. Config Tab — `Config!A:C`
+
+| Col | Field | Example | Notes |
+|---|---|---|---|
+| A | Variable Name | `Cost per 1000 Stitches` | Dynamic system configuration parameter |
+| B | Value | `10` | Parameter value (numeric or string) |
+| C | Last Updated | `2026-09-02T12:00:09.318Z` | ISO Timestamp |
+
+#### 3. Sales_Ledger Tab — `Sales_Ledger!A:K`
+
+| Col | Field | Format / Example | Notes |
+|---|---|---|---|
+| A | Date | `YYYY-MM-DD` | Invoice / Transaction Date |
+| B | Invoice ID | `CJS-2026-0001` | Formatted invoice sequence |
+| C | Customer | `Saniya Boutique` | Customer Name |
+| D | Service Type | `Machine Embroidery` | Service Category |
+| E | Total Stitches | `120000` | Stitch count |
+| F | Labor Hrs | `10` | Hours expended |
+| G | Margin % | `25` | Markup percentage |
+| H | Net Price | `2450` | Base revenue (excl. tax) |
+| I | GST | `441` | GST tax component |
+| J | Courier | `150` | Shipping / courier cost |
+| K | Gross Total | `3041` | Net + GST + Courier |
+
+#### 4. Expense_Ledger Tab — `Expense_Ledger!A:E`
+
+| Col | Field | Example |
+|---|---|---|
+| A | Date | `YYYY-MM-DD` |
+| B | Expense Category | `Cost of Thread` |
+| C | Description | `Naren - Thread buying` |
+| D | Amount | `840` |
+| E | Payment Method | `UPI` / `Cash` / `Bank` |
+
+#### 5. Asset_Ledger Tab — `Asset_Ledger!A:E`
+
+| Col | Field | Example |
+|---|---|---|
+| A | Asset Name | `Barudan 2-Head Commercial Embroidery Machine` |
+| B | Purchase Date | `2025-01-10` |
+| C | Purchase Price | `650000` |
+| D | Useful Life (Months) | `60` |
+| E | Monthly Depreciation | `10833.33` |
+
+#### 6. Capital_Ledger Tab — `Capital_Ledger!A:D`
+
+| Col | Field | Example |
+|---|---|---|
+| A | Date | `2025-01-05` |
+| B | Transaction Type | `Investment` / `Loan` |
+| C | Description | `Initial Owner Equity Contribution` |
+| D | Amount | `500000` |
+
+#### 7. Vendors Tab — `Vendors!A:F`
+
+| Col | Field | Notes |
+|---|---|---|
+| A | Vendor ID | `VND-001` |
+| B | Name | Vendor / Firm Name |
+| C | Category | Category (e.g. `Thread purchase`) |
+| D | Contact Person | Name of contact person |
+| E | Phone | Phone number |
+| F | Address | Location / Address |
+
+#### 8. Customers Tab — `Customers!A:D`
+
+| Col | Field | Notes |
+|---|---|---|
+| A | Customer ID | Unique numeric ID (`1001`, `1002`) |
+| B | Name | Customer full name |
+| C | Phone | WhatsApp / contact phone |
+| D | Address | Customer delivery address |
+
+#### 9. Holidays Tab — `Holidays!A:B`
 
 | Col | Field | Format |
 |---|---|---|
 | A | Date | `DD-Month-YYYY` e.g. `2-April-2026` |
-| B | Description | Optional label |
+| B | Description | Event description |
 
-#### Reminders Tab — A:C
+#### 10. Reminders Tab — `Reminders!A:C`
 
 | Col | Field | Notes |
 |---|---|---|
+| A | No | Numeric index |
 | B | When | Date string or `"11th of each month"` |
-| C | What | Reminder message text |
-
-#### Costing Tab — A:E
-
-| Col | Field | Notes |
-|---|---|---|
-| A | Embroidery Type | Matched case-insensitively |
-| B | Material | Matched case-insensitively |
-| C | Unit Label | Display only |
-| D | Unit Count | Stitch divisor |
-| E | Cost/Unit | Rs |
-
-#### Customers Tab — A:B
-
-| Col | Field |
-|---|---|
-| A | Customer ID |
-| B | Customer Name |
+| C | What to remind | Reminder message text |
 
 ---
 
