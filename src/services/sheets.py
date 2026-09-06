@@ -1211,11 +1211,19 @@ class GoogleSheetsService:
                 delivery = row[11] if len(row) > 11 else (row[8] if len(row) > 8 else "Unknown")
                 cost = row[12] if len(row) > 12 else (row[9] if len(row) > 9 else "Rs 0")
                 
+                qty = int(row[7]) if len(row) > 7 and str(row[7]).isdigit() else 1
+                stitches = int(row[8]) if len(row) > 8 and str(row[8]).isdigit() else 0
+                labor_hrs = float(row[9]) if len(row) > 9 and str(row[9]).replace(".", "", 1).isdigit() else 0.0
+
                 active_orders.append({
                     "order_id": oid,
                     "customer": cname,
+                    "customer_id": cid,
                     "order_type": order_type,
                     "template": template,
+                    "quantity": qty,
+                    "stitch_count": stitches,
+                    "labor_hours": labor_hrs,
                     "machine": machine,
                     "delivery_date": delivery,
                     "cost": cost
@@ -1224,3 +1232,68 @@ class GoogleSheetsService:
         except Exception as e:
             print(f"[SheetsAPI] get_active_orders_summary failed: {e}")
             return active_orders
+
+    def update_order_from_form(self, order_id: str, state) -> bool:
+        """
+        Updates an existing order row in 'Orders'!C:P using state from WhatsApp Flow edit submission.
+        """
+        if not self.service or not order_id: return False
+        try:
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, range="'Orders'!B:B"
+            ).execute()
+            rows = result.get('values', [])
+            target_row = None
+            for i, row in enumerate(rows):
+                if row and row[0] == order_id:
+                    target_row = i + 1
+                    break
+            if not target_row:
+                print(f"[SheetsAPI] Update failed: {order_id} not found.")
+                return False
+
+            # Read existing reasoning to append
+            o_result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, range=f"'Orders'!O{target_row}"
+            ).execute()
+            existing_reasoning = ""
+            o_vals = o_result.get('values', [])
+            if o_vals and o_vals[0]:
+                existing_reasoning = str(o_vals[0][0])
+
+            # Prepare values for C through P:
+            order_type = state.order_type or ("Machine Embroidery" if (state.stitch_count and state.stitch_count > 0) else "Embroidery design")
+            template_name = state.template_name or "General"
+            qty = int(state.quantity or 1)
+            stitches = int(state.stitch_count or 0)
+            labor_hrs = float(state.labor_hours or 0.0)
+
+            updated_values = [[
+                state.customer_id or "Unknown",
+                state.customer_name or "Unknown",
+                state.sender_id or "",
+                order_type,
+                template_name,
+                qty,
+                stitches,
+                labor_hrs,
+                state.machine_assigned or "None",
+                state.estimated_completion_date or state.requested_delivery_date or "Unknown",
+                f"Rs {state.total_cost_rs or 0}",
+                state.invoice_status or "Estimated",
+                existing_reasoning + f"\n[Form Edit {datetime.datetime.now(IST).strftime('%Y-%m-%d %H:%M')}]: " + (state.aggregated_reasoning or ""),
+                ""
+            ]]
+
+            self.service.spreadsheets().values().update(
+                spreadsheetId=self.spreadsheet_id,
+                range=f"'Orders'!C{target_row}:P{target_row}",
+                valueInputOption="USER_ENTERED",
+                body={'values': updated_values}
+            ).execute()
+
+            print(f"[SheetsAPI] Updated Order {order_id} from Form successfully.")
+            return True
+        except Exception as e:
+            print(f"[SheetsAPI] update_order_from_form failed: {e}")
+            return False

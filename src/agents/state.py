@@ -65,6 +65,8 @@ class AgentState(BaseModel):
     active_menu: Optional[str] = Field(default=None)  # "MAIN", "ADJUST", "INVOICING", "VENDORS", etc.
     pending_adjustment_type: Optional[str] = None     # "delivery_date", "machine", "cost"
     pending_adjustment_order_id: Optional[str] = None # Currently targeted Order ID for adjustment
+    editing_order_id: Optional[str] = None            # Set when launching form to edit an existing order
+    flow_init_data: Optional[dict] = None             # Pre-populated payload data for WhatsApp Flow
 
     # -------------------------------------------------------------------------
     # FINAL REPLY CONTRACT  (see docs/AGENT_DEVELOPMENT.md for full details)

@@ -12,14 +12,14 @@ MAIN_MENU_TEXT = (
     "🧵 *CJS Designs — Order Manager* 🧵\n"
     "Hello Boss! How can I assist you today? Please reply with a number:\n\n"
     "1️⃣ *New Order Form* (Open Clean Order Intake Form)\n"
-    "2️⃣ *Adjust Existing Order* (Change Date, Machine, Cost, or Reasoning)\n"
+    "2️⃣ *Adjust Existing Order* (Select an active order to edit in WhatsApp Form)\n"
     "3️⃣ *Invoicing & Billing* (Pending Invoices, Mark Invoiced/Paid, Debtors)\n"
     "4️⃣ *Daily Briefing & Tasks* (Today's summary, queues, and reminders)\n"
     "5️⃣ *Vendors & Expenses* (View suppliers or recent cash outflows)\n"
     "6️⃣ *Add New Customer* (Register a customer in Google Sheets)\n"
     "7️⃣ *Add New Template* (Add design template with machine & hours)\n"
     "8️⃣ *Add New Order Type* (Add embroidery category)\n\n"
-    "_Reply with the number (e.g. 1, 6, 7) or type a command directly._"
+    "_Reply with the number (e.g. 1, 2, 6) or type a command directly._"
 )
 
 ADJUST_MENU_TEXT = (
@@ -53,6 +53,20 @@ VENDORS_MENU_TEXT = (
     "_Reply with a number (e.g., 1 or 51)_"
 )
 
+import time
+
+def date_to_ms(d_str: str) -> str:
+    if not d_str:
+        return str(int(time.time() * 1000))
+    s = str(d_str).strip()
+    for fmt in ("%Y-%m-%d", "%d-%b-%Y", "%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d"):
+        try:
+            dt = datetime.datetime.strptime(s, fmt)
+            return str(int(dt.timestamp() * 1000))
+        except ValueError:
+            continue
+    return str(int(time.time() * 1000))
+
 def sanitize_customer_name(name: Optional[str]) -> Optional[str]:
     if not name:
         return None
@@ -62,7 +76,7 @@ def sanitize_customer_name(name: Optional[str]) -> Optional[str]:
     return name_clean
 
 def render_active_orders_prompt(title: str, db: GoogleSheetsService):
-    active_orders = db.get_active_orders_summary(limit=5)
+    active_orders = db.get_active_orders_summary(limit=10)
     if not active_orders:
         return None, (
             "Boss, there are no active orders in the queue right now! 📭\n"
@@ -71,9 +85,9 @@ def render_active_orders_prompt(title: str, db: GoogleSheetsService):
     lines = [f"{title}\n"]
     for idx, o in enumerate(active_orders, 1):
         lines.append(
-            f"{idx}️⃣ *{o['order_id']}* — {o['customer']} ({o.get('order_type', '')}, {o.get('template', '')}) | Due: {o['delivery_date']} | Machine: {o['machine']}"
+            f"{idx}️⃣ *{o['order_id']}* — {o['customer']} ({o.get('template', 'Order')}, {o.get('quantity', 1)} pcs) | Due: {o.get('delivery_date', '')} | {o.get('machine', '')}"
         )
-    lines.append("0️⃣ *Back to Main Menu*\n")
+    lines.append("\n0️⃣ *Back to Main Menu*\n")
     lines.append(f"_Reply with the number (1-{len(active_orders)}) or type the Order ID._")
     return active_orders, "\n".join(lines)
 
@@ -178,12 +192,21 @@ class CJSSingleAgent:
             )
             return state
 
-        # Option 2: Adjustments Menu / Codes 21-24
-        if raw_msg == "2" and (state.active_menu == "MAIN" or not state.active_menu):
-            state.active_menu = "ADJUST"
-            state.final_reply = ADJUST_MENU_TEXT
+        # Option 2: Adjust / Edit Active Orders in WhatsApp Form
+        if (raw_msg == "2" and (state.active_menu == "MAIN" or not state.active_menu)) or msg_lower in {"adjust order", "edit order", "adjust", "modify order"}:
+            orders, prompt_text = render_active_orders_prompt(
+                "⚙️ *Select Order to Adjust / Edit:*\nBoss, which active order would you like to modify?",
+                self.db
+            )
+            if not orders:
+                state.active_menu = None
+                state.final_reply = prompt_text
+                return state
+            state.active_menu = "SELECT_ORDER_FOR_EDIT"
+            state.final_reply = prompt_text
             return state
 
+        # Sub-menus / Direct codes 21-24 retained for quick access
         if raw_msg == "21" or (state.active_menu == "ADJUST" and raw_msg == "1"):
             orders, prompt_text = render_active_orders_prompt("📅 *Select Order to Change Delivery Date:*", self.db)
             if not orders:
@@ -451,7 +474,47 @@ class CJSSingleAgent:
             )
             return state
 
-        # Sub-menus: Adjustments
+        # Sub-menus: Adjustments & Order Editing
+        if state.active_menu == "SELECT_ORDER_FOR_EDIT":
+            orders = self.db.get_active_orders_summary(limit=10)
+            target_id = resolve_selected_order(raw_msg, orders)
+            if target_id:
+                # Find matching order from active_orders
+                matched = next((o for o in orders if o["order_id"] == target_id), None)
+                if not matched:
+                    matched = self.db.get_order(target_id) or {}
+                
+                cust = matched.get("customer") or matched.get("customer_name") or ""
+                otype = matched.get("order_type") or ("Machine Embroidery" if matched.get("machine") in ("Ricoma", "Aakruthi") else "Embroidery designing")
+                tmpl = matched.get("template") or matched.get("embroidery_type") or "General"
+                qty = int(matched.get("quantity") or 1)
+                stitches = int(matched.get("stitch_count") or 0)
+                labor = float(matched.get("labor_hours") or 1.0)
+                d_date = matched.get("delivery_date") or ""
+                
+                state.editing_order_id = target_id
+                state.flow_init_data = {
+                    "editing_order_id": target_id,
+                    "customer_select": cust,
+                    "order_type_select": otype,
+                    "template_select": tmpl,
+                    "quantity": qty,
+                    "delivery_date": date_to_ms(d_date),
+                    "stitch_count": stitches,
+                    "labor_hours": labor
+                }
+                state.send_order_form = True
+                state.active_menu = None
+                state.next_step = "END"
+                state.final_reply = (
+                    f"Opening WhatsApp Form to edit Order *{target_id}* (*{cust}*)... 📋\n"
+                    f"Existing order values are pre-filled for your edits."
+                )
+                return state
+            else:
+                state.final_reply = f"Boss, please reply with a number (1-{len(orders)}) or Order ID, or '0' for main menu."
+                return state
+
         if state.active_menu == "SELECT_ORDER_FOR_DATE":
             orders = self.db.get_active_orders_summary(limit=5)
             target_id = resolve_selected_order(raw_msg, orders)

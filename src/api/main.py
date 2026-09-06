@@ -228,14 +228,15 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                     else:
                         initial_state.stitch_count = 0
                 
-                # 7. Delivery Date
+                # 7. Delivery Date & Editing Order ID
                 initial_state.requested_delivery_date = str(
                     interactive_payload.get("delivery_date")
                     or interactive_payload.get("expected_delivery_date")
                     or ""
                 )
+                initial_state.editing_order_id = interactive_payload.get("editing_order_id") or None
                 initial_state.raw_message = "I have filled out the order form."
-                print(f"[WEBHOOK] Injected native Flow data into state for {sender_phone} (Customer: {initial_state.customer_name}, Type: {initial_state.order_type}, Template: {initial_state.template_name}, Stitches: {initial_state.stitch_count}, Hours: {initial_state.labor_hours})")
+                print(f"[WEBHOOK] Injected native Flow data into state for {sender_phone} (Editing: {initial_state.editing_order_id}, Customer: {initial_state.customer_name}, Type: {initial_state.order_type}, Template: {initial_state.template_name}, Stitches: {initial_state.stitch_count}, Hours: {initial_state.labor_hours})")
 
                 # FAST-PATH DETERMINISTIC PIPELINE FOR FORM SUBMISSIONS
                 # Bypasses multi-agent LLM loops to achieve sub-second response latency
@@ -250,25 +251,45 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                     estimator = EstimationAgent()
                     initial_state = estimator.process(initial_state)
 
-                    order_id = db_service.append_order(initial_state)
-                    initial_state.order_id = order_id
-
-                    confirm_reply = (
-                        f"✅ *New Order Created: {order_id}* 🧵\n\n"
-                        f"• *Customer:* {initial_state.customer_name}\n"
-                        f"• *Order Type:* {initial_state.order_type}\n"
-                        f"• *Template:* {initial_state.template_name}\n"
-                        f"• *Quantity:* {initial_state.quantity} pcs\n"
-                        f"• *Assigned Machine:* {initial_state.machine_assigned}\n"
-                        f"• *Est. Delivery Date:* {initial_state.estimated_completion_date}\n\n"
-                        f"💰 *Cost Breakdown:*\n"
-                        f"• Base Cost: Rs {initial_state.base_cost_rs or 0}\n"
-                        f"• Profit Margin ({initial_state.profit_margin_pct or 20}%): Rs {initial_state.profit_margin_rs or 0}\n"
-                        f"• GST ({initial_state.gst_rate_pct or 18}%): Rs {initial_state.gst_amount_rs or 0}\n"
-                        f"• *Total Amount: Rs {initial_state.total_cost_rs or 0}*\n\n"
-                        f"Status: *Estimated* | Saved to Google Sheets! 👍\n"
-                        f"Reply *'Hi'* anytime for the main menu."
-                    )
+                    if initial_state.editing_order_id:
+                        order_id = initial_state.editing_order_id
+                        initial_state.order_id = order_id
+                        db_service.update_order_from_form(order_id, initial_state)
+                        confirm_reply = (
+                            f"✅ *Order Updated: {order_id}* 🧵\n\n"
+                            f"• *Customer:* {initial_state.customer_name}\n"
+                            f"• *Order Type:* {initial_state.order_type}\n"
+                            f"• *Template:* {initial_state.template_name}\n"
+                            f"• *Quantity:* {initial_state.quantity} pcs\n"
+                            f"• *Assigned Machine:* {initial_state.machine_assigned}\n"
+                            f"• *Est. Delivery Date:* {initial_state.estimated_completion_date}\n\n"
+                            f"💰 *Updated Cost Breakdown:*\n"
+                            f"• Base Cost: Rs {initial_state.base_cost_rs or 0}\n"
+                            f"• Profit Margin ({initial_state.profit_margin_pct or 20}%): Rs {initial_state.profit_margin_rs or 0}\n"
+                            f"• GST ({initial_state.gst_rate_pct or 18}%): Rs {initial_state.gst_amount_rs or 0}\n"
+                            f"• *Total Amount: Rs {initial_state.total_cost_rs or 0}*\n\n"
+                            f"Status: *Updated in Google Sheets*! 👍\n"
+                            f"Reply *'Hi'* anytime for the main menu."
+                        )
+                    else:
+                        order_id = db_service.append_order(initial_state)
+                        initial_state.order_id = order_id
+                        confirm_reply = (
+                            f"✅ *New Order Created: {order_id}* 🧵\n\n"
+                            f"• *Customer:* {initial_state.customer_name}\n"
+                            f"• *Order Type:* {initial_state.order_type}\n"
+                            f"• *Template:* {initial_state.template_name}\n"
+                            f"• *Quantity:* {initial_state.quantity} pcs\n"
+                            f"• *Assigned Machine:* {initial_state.machine_assigned}\n"
+                            f"• *Est. Delivery Date:* {initial_state.estimated_completion_date}\n\n"
+                            f"💰 *Cost Breakdown:*\n"
+                            f"• Base Cost: Rs {initial_state.base_cost_rs or 0}\n"
+                            f"• Profit Margin ({initial_state.profit_margin_pct or 20}%): Rs {initial_state.profit_margin_rs or 0}\n"
+                            f"• GST ({initial_state.gst_rate_pct or 18}%): Rs {initial_state.gst_amount_rs or 0}\n"
+                            f"• *Total Amount: Rs {initial_state.total_cost_rs or 0}*\n\n"
+                            f"Status: *Estimated* | Saved to Google Sheets! 👍\n"
+                            f"Reply *'Hi'* anytime for the main menu."
+                        )
                     print(f"[FAST-PATH] Sending instant confirmation to {sender_phone} for {order_id}")
                     whatsapp_service.send_text_message(sender_phone, confirm_reply)
                     memory_service.clear_state(sender_phone)
@@ -280,10 +301,17 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
             
             if rebuilt_state.send_order_form:
                  # Trigger native WhatsApp Flow
-                 flow_id = os.getenv("WHATSAPP_FLOW_ID") or "2592939917793397"
+                 flow_id = os.getenv("WHATSAPP_FLOW_ID") or "1508478667983867"
                  msg_text = rebuilt_state.final_reply or "Please fill out the order form below, Boss:"
+                 header_text = f"Edit Order {rebuilt_state.editing_order_id}" if rebuilt_state.editing_order_id else "Order Creation"
                  if flow_id:
-                     sent = whatsapp_service.send_flow_message(sender_phone, flow_id, message_text=msg_text)
+                     sent = whatsapp_service.send_flow_message(
+                         sender_phone,
+                         flow_id,
+                         message_text=msg_text,
+                         screen_data=rebuilt_state.flow_init_data,
+                         header_text=header_text
+                     )
                      if not sent:
                          whatsapp_service.send_text_message(
                              sender_phone,

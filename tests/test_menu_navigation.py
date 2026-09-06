@@ -90,11 +90,22 @@ def test_main_menu_option_2_adjust_submenu(mock_sheets_service):
     state = AgentState(raw_message="2", active_menu="MAIN")
     result = collector.process(state)
     
-    assert result.active_menu == "ADJUST"
-    assert "Order Adjustments Menu" in result.final_reply
-    assert "Change Delivery Date" in result.final_reply
-    assert "Reassign Machine" in result.final_reply
-    assert "Override Cost" in result.final_reply
+    assert result.active_menu == "SELECT_ORDER_FOR_EDIT"
+    assert "Select Order to Adjust / Edit" in result.final_reply
+    assert "CJS-869BC6" in result.final_reply
+    assert "Shwetha" in result.final_reply
+
+def test_order_edit_form_selection(mock_sheets_service):
+    collector = OrderCollectorAgent()
+    state = AgentState(raw_message="1", active_menu="SELECT_ORDER_FOR_EDIT")
+    result = collector.process(state)
+    
+    assert result.send_order_form is True
+    assert result.editing_order_id == "CJS-869BC6"
+    assert result.flow_init_data is not None
+    assert result.flow_init_data["editing_order_id"] == "CJS-869BC6"
+    assert result.flow_init_data["customer_select"] == "Shwetha"
+    assert "Opening WhatsApp Form to edit Order *CJS-869BC6*" in result.final_reply
 
 def test_main_menu_option_3_invoicing_submenu(mock_sheets_service):
     collector = OrderCollectorAgent()

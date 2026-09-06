@@ -56,8 +56,41 @@ def build_flow_json() -> dict:
         "screens": [
             {
                 "id": "ORDER_SCREEN",
-                "title": "CJS Order Intake",
-                "data": {},
+                "title": "CJS Order Manager",
+                "data": {
+                    "init_customer": {
+                        "type": "string",
+                        "__example__": "Standard Client"
+                    },
+                    "init_order_type": {
+                        "type": "string",
+                        "__example__": "Machine Embroidery"
+                    },
+                    "init_template": {
+                        "type": "string",
+                        "__example__": "Standard Embroidery"
+                    },
+                    "init_quantity": {
+                        "type": "number",
+                        "__example__": 1
+                    },
+                    "init_delivery_date": {
+                        "type": "string",
+                        "__example__": "1788672000000"
+                    },
+                    "init_stitch_count": {
+                        "type": "number",
+                        "__example__": 10000
+                    },
+                    "init_labor_hours": {
+                        "type": "number",
+                        "__example__": 1.0
+                    },
+                    "editing_order_id": {
+                        "type": "string",
+                        "__example__": ""
+                    }
+                },
                 "terminal": True,
                 "layout": {
                     "type": "SingleColumnLayout",
@@ -65,10 +98,19 @@ def build_flow_json() -> dict:
                         {
                             "type": "Form",
                             "name": "order_form",
+                            "init-values": {
+                                "customer_select": "${data.init_customer}",
+                                "order_type_select": "${data.init_order_type}",
+                                "template_select": "${data.init_template}",
+                                "quantity": "${data.init_quantity}",
+                                "delivery_date": "${data.init_delivery_date}",
+                                "stitch_count": "${data.init_stitch_count}",
+                                "labor_hours": "${data.init_labor_hours}"
+                            },
                             "children": [
                                 {
                                     "type": "TextHeading",
-                                    "text": "New Order Intake"
+                                    "text": "Order Details"
                                 },
                                 {
                                     "type": "Dropdown",
@@ -132,7 +174,8 @@ def build_flow_json() -> dict:
                                     "quantity": "${form.quantity}",
                                     "delivery_date": "${form.delivery_date}",
                                     "stitch_count": "${form.stitch_count}",
-                                    "labor_hours": "${form.labor_hours}"
+                                    "labor_hours": "${form.labor_hours}",
+                                    "editing_order_id": "${data.editing_order_id}"
                                 }
                             }
                         }
