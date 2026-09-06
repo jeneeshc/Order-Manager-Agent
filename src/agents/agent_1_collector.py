@@ -43,12 +43,15 @@ def sanitize_customer_name(name: Optional[str]) -> Optional[str]:
 MAIN_MENU_TEXT = (
     "🧵 *CJS Designs — Order Manager* 🧵\n"
     "Hello Boss! How can I assist you today? Please reply with a number:\n\n"
-    "1️⃣ *New Order Form* (Customer, Order Type & Template dropdowns)\n"
+    "1️⃣ *New Order Form* (Open Clean Order Intake Form)\n"
     "2️⃣ *Adjust Existing Order* (Change Date, Machine, Cost, or Reasoning)\n"
     "3️⃣ *Invoicing & Billing* (Pending Invoices, Mark Invoiced/Paid, Debtors)\n"
     "4️⃣ *Daily Briefing & Tasks* (Today's summary, queues, and reminders)\n"
-    "5️⃣ *Vendors & Expenses* (View suppliers or recent cash outflows)\n\n"
-    "_Reply with the number (e.g. 1, 2) or type a command directly._"
+    "5️⃣ *Vendors & Expenses* (View suppliers or recent cash outflows)\n"
+    "6️⃣ *Add New Customer* (Register a customer in Google Sheets)\n"
+    "7️⃣ *Add New Template* (Add design template with machine & hours)\n"
+    "8️⃣ *Add New Order Type* (Add embroidery category)\n\n"
+    "_Reply with the number (e.g. 1, 6, 7) or type a command directly._"
 )
 
 ADJUST_MENU_TEXT = (
@@ -248,13 +251,13 @@ class OrderCollectorAgent:
             return state
 
         # 0.4 Handling Main Menu numeric choices & direct intents
-        if state.active_menu == "MAIN" or (not state.active_menu and raw_msg in {"1", "2", "3", "4", "5"}) or msg_lower in {"new order", "create order", "order form", "open form"}:
+        if state.active_menu == "MAIN" or (not state.active_menu and raw_msg in {"1", "2", "3", "4", "5", "6", "7", "8"}) or msg_lower in {"new order", "create order", "order form", "open form"}:
             if raw_msg == "1" or msg_lower in {"1", "new order", "create order", "order form", "open form"}:
                 state.send_order_form = True
                 state.active_menu = None
                 state.final_reply = (
                     "Opening WhatsApp Order Form for you, Boss! 📋\n"
-                    "Please fill in customer name, order type, template, and quantity."
+                    "Please select customer, order type, template, quantity, and delivery date."
                 )
                 return state
             elif raw_msg == "2":
@@ -272,6 +275,35 @@ class OrderCollectorAgent:
             elif raw_msg == "5":
                 state.active_menu = "VENDORS"
                 state.final_reply = VENDORS_MENU_TEXT
+                return state
+            elif raw_msg in {"6", "61"} or msg_lower in {"add customer", "new customer", "create customer"}:
+                state.active_menu = "INPUT_NEW_CUSTOMER"
+                state.final_reply = (
+                    "👤 *Add New Customer*\n"
+                    "Boss, please reply with the customer details:\n\n"
+                    "*Format:* Customer Name, Phone (optional), Address/City (optional)\n"
+                    "_Example: Priya Boutique, 9876543210, Ernakulam_\n\n"
+                    "_Reply 0 to cancel._"
+                )
+                return state
+            elif raw_msg in {"7", "71"} or msg_lower in {"add template", "new template", "create template"}:
+                state.active_menu = "INPUT_NEW_TEMPLATE"
+                state.final_reply = (
+                    "🎨 *Add New Description Template*\n"
+                    "Boss, please reply with the template details:\n\n"
+                    "*Format:* Template Name, Machine (Ricoma / Aakruthi / None), Default Labor Hours (optional), Default Stitches (optional)\n"
+                    "_Example: Heavy Bridal Blouse, Ricoma, 3.5, 45000_\n\n"
+                    "_Reply 0 to cancel._"
+                )
+                return state
+            elif raw_msg in {"8", "81"} or msg_lower in {"add order type", "new order type", "create order type"}:
+                state.active_menu = "INPUT_NEW_ORDER_TYPE"
+                state.final_reply = (
+                    "🧵 *Add New Order Type*\n"
+                    "Boss, please reply with the new order type name:\n\n"
+                    "_Example: Cutwork Embroidery or Blouse Neck Embroidery_\n\n"
+                    "_Reply 0 to cancel._"
+                )
                 return state
 
         # 0.5 Handling Selection States (Order selection & input prompts)
@@ -411,10 +443,104 @@ class OrderCollectorAgent:
                 state.order_id = target_id
                 state.active_menu = None
                 state.final_reply = f"✅ *Status Updated!*\nOrder *{target_id}* has been marked as *Completed*. 📋"
-                return state
             else:
                 state.final_reply = f"Boss, please reply with a number (1-{len(orders)}) or Order ID, or '0' for main menu."
                 return state
+
+        if state.active_menu == "INPUT_NEW_CUSTOMER":
+            if raw_msg == "0":
+                state.active_menu = "MAIN"
+                state.final_reply = MAIN_MENU_TEXT
+                return state
+            parts = [p.strip() for p in raw_msg.split(",") if p.strip()]
+            cust_name = parts[0] if parts else raw_msg.strip()
+            phone = parts[1] if len(parts) > 1 else ""
+            address = parts[2] if len(parts) > 2 else ""
+            
+            clean_name = sanitize_customer_name(cust_name)
+            if not clean_name:
+                state.final_reply = "Boss, please provide a valid customer name (or reply '0' to cancel)."
+                return state
+                
+            cid = db.create_customer_if_not_exists(clean_name, phone=phone, address=address)
+            state.active_menu = None
+            state.final_reply = (
+                f"✅ *Customer Added Successfully!*\n\n"
+                f"• *Name:* {clean_name}\n"
+                f"• *Customer ID:* {cid}\n"
+                f"• *Phone:* {phone or 'Not provided'}\n"
+                f"• *Location:* {address or 'Not provided'}\n\n"
+                f"Saved to 'Customers' in Google Sheets. 👍\n"
+                f"Reply *'Hi'* for main menu or *'1'* to start a new order."
+            )
+            return state
+
+        if state.active_menu == "INPUT_NEW_TEMPLATE":
+            if raw_msg == "0":
+                state.active_menu = "MAIN"
+                state.final_reply = MAIN_MENU_TEXT
+                return state
+            parts = [p.strip() for p in raw_msg.split(",") if p.strip()]
+            if not parts:
+                state.final_reply = "Boss, please provide a valid template name (or reply '0' to cancel)."
+                return state
+            template_name = parts[0]
+            machine = "Ricoma"
+            labor_hours = 1.0
+            stitch_count = 10000
+            
+            if len(parts) > 1:
+                m_candidate = parts[1].title()
+                if m_candidate in {"Ricoma", "Aakruthi", "None"}:
+                    machine = m_candidate
+            if len(parts) > 2:
+                try:
+                    labor_hours = float(parts[2])
+                except ValueError:
+                    pass
+            if len(parts) > 3:
+                try:
+                    stitch_count = int(parts[3])
+                except ValueError:
+                    pass
+                    
+            order_type = "Machine Embroidery" if machine in ("Ricoma", "Aakruthi") else "Embroidery designing"
+            db.create_template_if_not_exists(
+                order_type=order_type,
+                template_name=template_name,
+                machine=machine,
+                default_labor_hours=labor_hours
+            )
+            state.active_menu = None
+            state.final_reply = (
+                f"✅ *Template Added Successfully!*\n\n"
+                f"• *Template:* {template_name}\n"
+                f"• *Machine:* {machine}\n"
+                f"• *Order Type:* {order_type}\n"
+                f"• *Default Labor:* {labor_hours} hrs\n"
+                f"• *Default Stitches:* {stitch_count:,}\n\n"
+                f"Saved to 'Description_Templates' in Google Sheets. 👍\n"
+                f"Reply *'Hi'* for main menu or *'1'* to start a new order."
+            )
+            return state
+
+        if state.active_menu == "INPUT_NEW_ORDER_TYPE":
+            if raw_msg == "0":
+                state.active_menu = "MAIN"
+                state.final_reply = MAIN_MENU_TEXT
+                return state
+            new_type = raw_msg.strip()
+            if not new_type:
+                state.final_reply = "Boss, please provide an order type name (or reply '0' to cancel)."
+                return state
+            state.active_menu = None
+            state.final_reply = (
+                f"✅ *Order Type Added!*\n\n"
+                f"• *Order Type:* {new_type}\n\n"
+                f"Registered for CJS Designs. 👍\n"
+                f"Reply *'Hi'* for main menu or *'1'* to start a new order."
+            )
+            return state
 
         # Clear active menu if unrecognized text was sent (e.g. Boss typed a freeform order or intent)
         state.active_menu = None

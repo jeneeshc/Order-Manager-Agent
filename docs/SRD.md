@@ -83,11 +83,16 @@ LangGraph compiles worker agents into a supervisor-controlled state graph:
   - `stitch_count: Optional[int] = None` *(Optional; null for Embroidery design)*
   - `labor_hours: Optional[float] = None` *(Optional; pre-populated from Description_Templates Col E, editable)*
 - **Removed Fields:** `fabric_type` and `embroidery_type` are completely removed; replaced by `order_type` and `template_name`.
-- **Form Dispatcher & Auto-Registration Architecture:**
+- **Form Dispatcher & Master Data Management:**
   - Emits native WhatsApp Flow payload containing:
-    - **Customer Name:** Dropdown list of existing customers from `Customers!B:B` plus "+ New Customer" write-in option. When a new customer name is entered, `GoogleSheetsService.create_customer_if_not_exists()` generates a new `Customer ID` and persists the record immediately in the `Customers` tab.
-    - **Order Type:** Dropdown from `Description_Templates!A:A` distinct values (`Machine Embroidery`, `Embroidery design`) with write-in capability for new service lines.
-    - **Template Name:** Dependent dropdown filtered by chosen Order Type (`Description_Templates!C:C`), with "+ New Template" write-in option. When a new template name is provided, `GoogleSheetsService.create_template_if_not_exists()` registers the template with its allocated machine and default labor hours into `Description_Templates`.
+    - **Customer Name:** Dropdown list of registered active clients from `Customers!B:B`.
+    - **Order Type:** Dropdown of standard services (`Machine Embroidery`, `Embroidery Designing`).
+    - **Template Name:** Dropdown from `Description_Templates!C:C` showing template and assigned machine.
+    - **Quantity, Delivery Date, Stitch Count, Labor Hours**.
+  - **Main Menu Fast-Action Master Data Handlers:**
+    - `Option 6 / Code 61`: Add New Customer &rarr; `create_customer_if_not_exists()`.
+    - `Option 7 / Code 71`: Add New Template &rarr; `create_template_if_not_exists()`.
+    - `Option 8 / Code 81`: Add New Order Type.
     - **Quantity:** Numeric integer input (default 1).
     - **Expected Delivery Date:** DatePicker.
     - **Stitch Count:** Numeric input (disabled when Order Type is `Embroidery design`).

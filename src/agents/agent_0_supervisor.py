@@ -85,7 +85,10 @@ class SupervisorAgent:
 
         # Route to collector if user is interacting with an active menu or numeric choice
         msg_clean = (state.raw_message or "").strip()
-        is_menu_code = msg_clean in {"0", "1", "2", "3", "4", "5", "21", "22", "23", "24", "31", "32", "33", "34", "51", "52"}
+        is_menu_code = msg_clean in {
+            "0", "1", "2", "3", "4", "5", "6", "7", "8",
+            "21", "22", "23", "24", "31", "32", "33", "34", "51", "52", "61", "71", "81"
+        }
         if (state.active_menu or is_menu_code) and not state.final_reply:
             next_step = "collector"
             reasoning = f"Active menu '{state.active_menu}' or choice '{msg_clean}' in progress, routing to collector."

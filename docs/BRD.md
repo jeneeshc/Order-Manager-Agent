@@ -69,28 +69,22 @@ Embroidery orders are allocated to specific hardware or classified as software d
 
 ### 5. Functional Requirements
 
-#### FR-1: Order Intake, Dynamic Dropdowns & Auto-Registration
-- **Form-Based Intake:** To prevent free-text errors and ambiguities, order intake is conducted via an interactive WhatsApp Flow form launched upon selecting "New Order" (or requesting to book an order).
-- **Interactive Form Fields & Dynamic Sourcing:**
-  1. **Customer Name** *(Required, Dropdown with New-Entry Write-In)*:
-     - **Dropdown Selection:** Pre-populated dynamically with all existing active customers from the `Customers` tab.
-     - **New Customer Auto-Registration:** If Siny selects "+ New Customer" or provides a new name, the system automatically registers the new customer in the `Customers` tab (generating a new unique `Customer ID`) so it is saved permanently for future orders and shared with CJS Accountant.
-  2. **Order Type** *(Required, Dropdown with New-Entry Capability)*:
-     - **Dropdown Selection:** Pre-populated from distinct values in `Description_Templates` Column A (e.g., `Machine Embroidery`, `Embroidery design`).
-     - **Dynamic Registration:** Allows Siny to enter a new order type if new service offerings are introduced.
-  3. **Template Name** *(Required, Dependent Dropdown with New-Entry Capability)*:
-     - **Dependent Dropdown Selection:** Filtered dynamically based on the selected Order Type, populated from `Description_Templates` Column C.
-     - **New Template Auto-Registration:** If Siny specifies a new template name, the system automatically appends it to `Description_Templates` with its associated machine allocation and default labor hours.
+#### FR-1: Order Intake, Streamlined Dropdowns & Master Data Management
+- **Streamlined Form-Based Intake:** To prevent mobile form clutter, ambiguity, and latency, order intake is conducted via a clean WhatsApp Flow form containing only essential dropdowns and inputs:
+  1. **Customer Name** *(Required, Dropdown)*: Pre-populated with active registered customers from the `Customers` tab.
+  2. **Order Type** *(Required, Dropdown)*: Pre-populated with core service types (`Machine Embroidery`, `Embroidery Designing`).
+  3. **Template Name** *(Required, Dropdown)*: Pre-populated with active templates from `Description_Templates` (showing template name and assigned machine).
   4. **Quantity** *(Required, Integer)*: Number of units (default: 1).
   5. **Expected Delivery Date** *(Required, DatePicker)*: Customer's target delivery date.
-  6. **Stitch Count** *(Optional / Conditional, Integer)*:
-     - For `Machine Embroidery`: Optional (if known/provided upfront).
-     - For `Embroidery design`: Not required / disabled (software design does not have a machine stitch count).
-  7. **Labor Hours** *(Optional / Pre-populated, Decimal)*:
-     - Represents the time Siny spends on design digitizing or preparatory work.
-     - Automatically pre-populated with the default labor hours from `Description_Templates` Column E for the chosen template.
-     - Fully editable by Siny during form submission or via text override.
-- **Immediate Acknowledgment:** Instantly acknowledges message receipt ("Working on it... 🔄") to eliminate perceived latency.
+  6. **Stitch Count** *(Optional, Integer)*: Stitch count if known upfront.
+  7. **Labor Hours** *(Optional, Decimal)*: Custom labor hours override (defaults to template's standard duration).
+
+- **Dedicated Master Data Management via Main Menu:**
+  To keep the intake form fast and uncluttered, adding new master records is handled via conversational menu actions:
+  - **6️⃣ Add New Customer (Code 6 / 61):** Prompts Siny for customer name, phone, and location, then saves the new client to the `Customers` tab with a generated `Customer ID`.
+  - **7️⃣ Add New Template (Code 7 / 71):** Prompts Siny for template name, machine (`Ricoma`, `Aakruthi`, `None`), default labor hours, and default stitches, saving to `Description_Templates`.
+  - **8️⃣ Add New Order Type (Code 8 / 81):** Prompts Siny for new service categories and registers them in configuration.
+- **Immediate Acknowledgment:** Instantly acknowledges message receipt to eliminate perceived latency.
 - **Duplicate Protection:** Warns if an identical order (same customer, template, and delivery date) was created within the last 24 hours.
 
 #### FR-2: Production Scheduling & Capacity Validation

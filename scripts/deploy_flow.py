@@ -2,8 +2,10 @@ import os
 import requests
 import json
 import time
+import sys
 from dotenv import load_dotenv
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
 
 WABA_ID = os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID")
@@ -19,24 +21,25 @@ def build_flow_json() -> dict:
     from src.services.sheets import GoogleSheetsService
     sheets = GoogleSheetsService()
     
-    # 1. Customer Options
+    # 1. Customer Options (strictly existing customers)
     customers_list = sheets.get_all_customers_list() or []
-    customer_options = [{"id": "NEW", "title": "➕ + New Customer (Type below)"}]
+    customer_options = []
     for c in customers_list:
         clean = str(c).strip()
         if clean:
             customer_options.append({"id": clean, "title": clean[:30]})
+    if not customer_options:
+        customer_options = [{"id": "Standard Client", "title": "Standard Client"}]
             
-    # 2. Order Types
+    # 2. Order Types (clean list)
     order_types = [
         {"id": "Machine Embroidery", "title": "Machine Embroidery"},
-        {"id": "Embroidery Designing", "title": "Embroidery Designing"},
-        {"id": "NEW", "title": "➕ + New Order Type (Type below)"}
+        {"id": "Embroidery Designing", "title": "Embroidery Designing"}
     ]
     
-    # 3. Template Options
+    # 3. Template Options (strictly existing templates)
     templates_list = sheets.get_description_templates() or []
-    template_options = [{"id": "NEW", "title": "➕ + New Template (Type below)"}]
+    template_options = []
     seen_templates = set()
     for t in templates_list:
         tname = t.get("template_name", "").strip()
@@ -45,6 +48,8 @@ def build_flow_json() -> dict:
             machine = t.get("machine", "")
             title_str = f"{tname} ({machine})" if machine and machine != "None" else tname
             template_options.append({"id": tname, "title": title_str[:30]})
+    if not template_options:
+        template_options = [{"id": "Standard Embroidery", "title": "Standard Embroidery"}]
 
     return {
         "version": "7.2",
@@ -73,12 +78,6 @@ def build_flow_json() -> dict:
                                     "data-source": customer_options
                                 },
                                 {
-                                    "type": "TextInput",
-                                    "name": "new_customer_name",
-                                    "label": "New Customer (if not in list above)",
-                                    "required": False
-                                },
-                                {
                                     "type": "Dropdown",
                                     "name": "order_type_select",
                                     "label": "Order Type",
@@ -86,23 +85,11 @@ def build_flow_json() -> dict:
                                     "data-source": order_types
                                 },
                                 {
-                                    "type": "TextInput",
-                                    "name": "new_order_type",
-                                    "label": "New Order Type (if not in list above)",
-                                    "required": False
-                                },
-                                {
                                     "type": "Dropdown",
                                     "name": "template_select",
                                     "label": "Template / Design Name",
                                     "required": True,
                                     "data-source": template_options
-                                },
-                                {
-                                    "type": "TextInput",
-                                    "name": "new_template_name",
-                                    "label": "New Template (if not in list above)",
-                                    "required": False
                                 },
                                 {
                                     "type": "TextInput",
@@ -140,11 +127,8 @@ def build_flow_json() -> dict:
                                 "name": "complete",
                                 "payload": {
                                     "customer_select": "${form.customer_select}",
-                                    "new_customer_name": "${form.new_customer_name}",
                                     "order_type_select": "${form.order_type_select}",
-                                    "new_order_type": "${form.new_order_type}",
                                     "template_select": "${form.template_select}",
-                                    "new_template_name": "${form.new_template_name}",
                                     "quantity": "${form.quantity}",
                                     "delivery_date": "${form.delivery_date}",
                                     "stitch_count": "${form.stitch_count}",
@@ -224,13 +208,20 @@ def update_env_flow_id(new_flow_id: str):
                 f.write(f'WHATSAPP_FLOW_ID="{new_flow_id}"\n')
         print(f"-> Updated .env with WHATSAPP_FLOW_ID={new_flow_id}")
 
-if __name__ == "__main__":
+def redeploy_order_flow() -> str:
+    """Builds and publishes an updated Flow to Meta Graph API, updating local .env and returning the new flow_id."""
     flow_name = f"cjs_order_intake_{int(time.time())}"
     flow_json = build_flow_json()
     new_id = create_flow(flow_name)
     upload_assets(new_id, flow_json)
     publish_flow(new_id)
     update_env_flow_id(new_id)
+    os.environ["WHATSAPP_FLOW_ID"] = new_id
     print(f"\n==========================================")
     print(f"SUCCESS! New Flow ID: {new_id}")
     print(f"==========================================")
+    return new_id
+
+if __name__ == "__main__":
+    redeploy_order_flow()
+

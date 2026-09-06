@@ -72,20 +72,20 @@ def test_flow_json_structure():
     field_names = [child.get("name") for child in form_children if "name" in child]
 
     assert "customer_select" in field_names
-    assert "new_customer_name" in field_names
     assert "order_type_select" in field_names
-    assert "new_order_type" in field_names
     assert "template_select" in field_names
-    assert "new_template_name" in field_names
     assert "quantity" in field_names
     assert "delivery_date" in field_names
     assert "stitch_count" in field_names
     assert "labor_hours" in field_names
+    # Verify write-in textboxes are excluded
+    assert "new_customer_name" not in field_names
+    assert "new_order_type" not in field_names
+    assert "new_template_name" not in field_names
 
     footer = screen["layout"]["children"][1]
     payload = footer["on-click-action"]["payload"]
     assert payload["customer_select"] == "${form.customer_select}"
-    assert payload["new_customer_name"] == "${form.new_customer_name}"
     assert payload["order_type_select"] == "${form.order_type_select}"
     assert payload["template_select"] == "${form.template_select}"
     assert payload["quantity"] == "${form.quantity}"
