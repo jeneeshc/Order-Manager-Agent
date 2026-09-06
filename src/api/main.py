@@ -236,7 +236,44 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                 )
                 initial_state.raw_message = "I have filled out the order form."
                 print(f"[WEBHOOK] Injected native Flow data into state for {sender_phone} (Customer: {initial_state.customer_name}, Type: {initial_state.order_type}, Template: {initial_state.template_name}, Stitches: {initial_state.stitch_count}, Hours: {initial_state.labor_hours})")
-            
+
+                # FAST-PATH DETERMINISTIC PIPELINE FOR FORM SUBMISSIONS
+                # Bypasses multi-agent LLM loops to achieve sub-second response latency
+                if initial_state.customer_name and not initial_state.is_missing_info:
+                    print(f"[FAST-PATH] Executing deterministic pipeline for form submission (0 LLM overhead)...")
+                    from src.agents.agent_2_scheduler import ProductionSchedulerAgent
+                    from src.agents.agent_3_estimator import EstimationAgent
+
+                    scheduler = ProductionSchedulerAgent()
+                    initial_state = scheduler.process(initial_state)
+
+                    estimator = EstimationAgent()
+                    initial_state = estimator.process(initial_state)
+
+                    order_id = db_service.append_order(initial_state)
+                    initial_state.order_id = order_id
+
+                    confirm_reply = (
+                        f"✅ *New Order Created: {order_id}* 🧵\n\n"
+                        f"• *Customer:* {initial_state.customer_name}\n"
+                        f"• *Order Type:* {initial_state.order_type}\n"
+                        f"• *Template:* {initial_state.template_name}\n"
+                        f"• *Quantity:* {initial_state.quantity} pcs\n"
+                        f"• *Assigned Machine:* {initial_state.machine_assigned}\n"
+                        f"• *Est. Delivery Date:* {initial_state.estimated_completion_date}\n\n"
+                        f"💰 *Cost Breakdown:*\n"
+                        f"• Base Cost: Rs {initial_state.base_cost_rs or 0}\n"
+                        f"• Profit Margin: Rs {initial_state.profit_margin_rs or 0}\n"
+                        f"• GST (18%): Rs {initial_state.gst_amount_rs or 0}\n"
+                        f"• *Total Amount: Rs {initial_state.total_cost_rs or 0}*\n\n"
+                        f"Status: *Estimated* | Saved to Google Sheets! 👍\n"
+                        f"Reply *'Hi'* anytime for the main menu."
+                    )
+                    print(f"[FAST-PATH] Sending instant confirmation to {sender_phone} for {order_id}")
+                    whatsapp_service.send_text_message(sender_phone, confirm_reply)
+                    memory_service.clear_state(sender_phone)
+                    return
+
             # 2. Execute the LangGraph chain (with Guard Rails)
             final_state_dict = cjs_bot.invoke(initial_state, config={"recursion_limit": 20})
             rebuilt_state = AgentState(**final_state_dict)

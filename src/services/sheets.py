@@ -10,10 +10,18 @@ IST = pytz.timezone("Asia/Kolkata")
 
 class GoogleSheetsService:
     """Wrapper for writing outputs directly to Boss's spreadsheet."""
+    _cached_service = None
+    _config_cache = None
+    _config_cache_time = 0
+
     def __init__(self):
         self.spreadsheet_id = os.getenv("GOOGLE_SHEET_ID")
         self.creds_file = r"d:\Projects\CJSDesigns\credentials.json"
         
+        if GoogleSheetsService._cached_service is not None:
+            self.service = GoogleSheetsService._cached_service
+            return
+
         try:
             self.scopes = ['https://www.googleapis.com/auth/spreadsheets']
             creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
@@ -28,7 +36,8 @@ class GoogleSheetsService:
                 # Cloud Run Production Context (Implicit Auth)
                 self.creds, _ = google.auth.default(scopes=self.scopes)
                 
-            self.service = build('sheets', 'v4', credentials=self.creds)
+            self.service = build('sheets', 'v4', credentials=self.creds, cache_discovery=False)
+            GoogleSheetsService._cached_service = self.service
         except Exception as e:
             print(f"[SheetsAPI] Auth failed. Check credentials: {e}")
             self.service = None
@@ -982,6 +991,11 @@ class GoogleSheetsService:
         Returns a dictionary mapping Variable Name -> Value (coerced to float/int if numeric, else string).
         Example: {"Cost per 1000 Stitches": 10.0, "Hourly Labor Rate": 100.0, "GST Rate Percent": 18.0, "Studio Name": "CJS Designs"}
         """
+        import time
+        now = time.time()
+        if GoogleSheetsService._config_cache and (now - GoogleSheetsService._config_cache_time) < 120:
+            return GoogleSheetsService._config_cache
+
         config = {}
         if not self.service: return config
         try:
@@ -1002,6 +1016,8 @@ class GoogleSheetsService:
                     var_val = var_val_str
                 config[var_name] = var_val
             print(f"[SheetsAPI] Loaded {len(config)} variables from 'Config' tab.")
+            GoogleSheetsService._config_cache = config
+            GoogleSheetsService._config_cache_time = now
             return config
         except Exception as e:
             print(f"[SheetsAPI] get_config_variables failed: {e}")
