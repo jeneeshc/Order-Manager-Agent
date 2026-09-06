@@ -16,7 +16,12 @@ class GoogleSheetsService:
         
         try:
             self.scopes = ['https://www.googleapis.com/auth/spreadsheets']
-            if os.path.exists(self.creds_file):
+            creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
+            if creds_json:
+                import json
+                info = json.loads(creds_json) if isinstance(creds_json, str) else creds_json
+                self.creds = service_account.Credentials.from_service_account_info(info, scopes=self.scopes)
+            elif os.path.exists(self.creds_file):
                 # Local Development Context
                 self.creds = service_account.Credentials.from_service_account_file(self.creds_file, scopes=self.scopes)
             else:
