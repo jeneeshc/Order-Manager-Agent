@@ -10,6 +10,17 @@ load_dotenv()
 
 WABA_ID = os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID")
 TOKEN = os.getenv("WHATSAPP_ACCESS_TOKEN")
+if not TOKEN or TOKEN.startswith("EAAP...") or len(TOKEN) < 50:
+    try:
+        import subprocess
+        TOKEN = subprocess.check_output(
+            "gcloud secrets versions access latest --secret=WHATSAPP_ACCESS_TOKEN --project=cjs-designs-501004",
+            shell=True, text=True
+        ).strip()
+    except Exception:
+        pass
+
+WABA_ID = os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID") or "1457897545971090"
 BASE_URL = "https://graph.facebook.com/v22.0"
 
 HEADERS = {
@@ -31,25 +42,73 @@ def build_flow_json() -> dict:
     if not customer_options:
         customer_options = [{"id": "Standard Client", "title": "Standard Client"}]
             
-    # 2. Order Types (clean list)
-    order_types = [
-        {"id": "Machine Embroidery", "title": "Machine Embroidery"},
-        {"id": "Embroidery Designing", "title": "Embroidery Designing"}
-    ]
-    
-    # 3. Template Options (strictly existing templates)
+    # 2. Template Options (strictly existing templates with auto-population of stitches & labor minutes)
     templates_list = sheets.get_description_templates() or []
     template_options = []
     seen_templates = set()
+    first_template_stitches = 50000
+    first_template_labor_mins = 360
+
     for t in templates_list:
         tname = t.get("template_name", "").strip()
         if tname and tname not in seen_templates:
             seen_templates.add(tname)
             machine = t.get("machine", "")
             title_str = f"{tname} ({machine})" if machine and machine != "None" else tname
-            template_options.append({"id": tname, "title": title_str[:30]})
+            st = int(t.get("stitch_count") or 0)
+            lm = int(t.get("labor_minutes") or 0)
+            if not template_options:
+                first_template_stitches = st
+                first_template_labor_mins = lm
+            template_options.append({
+                "id": tname,
+                "title": title_str[:30],
+                "on-select-action": {
+                    "name": "update_data",
+                    "payload": {
+                        "init_stitch_count": st,
+                        "init_labor_minutes": lm
+                    }
+                }
+            })
     if not template_options:
-        template_options = [{"id": "Standard Embroidery", "title": "Standard Embroidery"}]
+        template_options = [{
+            "id": "Standard Embroidery",
+            "title": "Standard Embroidery",
+            "on-select-action": {
+                "name": "update_data",
+                "payload": {
+                    "init_stitch_count": 10000,
+                    "init_labor_minutes": 60
+                }
+            }
+        }]
+
+    # 3. Order Types (clean list with on-select auto-population)
+    order_types = [
+        {
+            "id": "Machine Embroidery",
+            "title": "Machine Embroidery",
+            "on-select-action": {
+                "name": "update_data",
+                "payload": {
+                    "init_stitch_count": first_template_stitches,
+                    "init_labor_minutes": first_template_labor_mins
+                }
+            }
+        },
+        {
+            "id": "Embroidery Designing",
+            "title": "Embroidery Designing",
+            "on-select-action": {
+                "name": "update_data",
+                "payload": {
+                    "init_stitch_count": 0,
+                    "init_labor_minutes": 30
+                }
+            }
+        }
+    ]
 
     return {
         "version": "7.2",
@@ -68,7 +127,7 @@ def build_flow_json() -> dict:
                     },
                     "init_template": {
                         "type": "string",
-                        "__example__": "Standard Embroidery"
+                        "__example__": template_options[0]["id"]
                     },
                     "init_quantity": {
                         "type": "number",
@@ -80,11 +139,11 @@ def build_flow_json() -> dict:
                     },
                     "init_stitch_count": {
                         "type": "number",
-                        "__example__": 10000
+                        "__example__": first_template_stitches
                     },
-                    "init_labor_hours": {
+                    "init_labor_minutes": {
                         "type": "number",
-                        "__example__": 1.0
+                        "__example__": first_template_labor_mins
                     },
                     "editing_order_id": {
                         "type": "string",
@@ -105,7 +164,7 @@ def build_flow_json() -> dict:
                                 "quantity": "${data.init_quantity}",
                                 "delivery_date": "${data.init_delivery_date}",
                                 "stitch_count": "${data.init_stitch_count}",
-                                "labor_hours": "${data.init_labor_hours}"
+                                "labor_minutes": "${data.init_labor_minutes}"
                             },
                             "children": [
                                 {
@@ -149,14 +208,14 @@ def build_flow_json() -> dict:
                                 {
                                     "type": "TextInput",
                                     "name": "stitch_count",
-                                    "label": "Stitch Count (Optional)",
+                                    "label": "Stitch Count",
                                     "input-type": "number",
                                     "required": False
                                 },
                                 {
                                     "type": "TextInput",
-                                    "name": "labor_hours",
-                                    "label": "Labor Hours (Optional Override)",
+                                    "name": "labor_minutes",
+                                    "label": "Labor Minutes",
                                     "input-type": "number",
                                     "required": False
                                 }
@@ -174,7 +233,7 @@ def build_flow_json() -> dict:
                                     "quantity": "${form.quantity}",
                                     "delivery_date": "${form.delivery_date}",
                                     "stitch_count": "${form.stitch_count}",
-                                    "labor_hours": "${form.labor_hours}",
+                                    "labor_minutes": "${form.labor_minutes}",
                                     "editing_order_id": "${data.editing_order_id}"
                                 }
                             }

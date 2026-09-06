@@ -48,15 +48,15 @@ class GoogleSheetsService:
 
     def get_description_templates(self) -> list:
         """
-        Reads template specifications from 'Description_Templates'!A:E.
-        Cols: A=Order Type, B=Category, C=Template Name, D=Machine Allocation, E=Default Labor Hours.
+        Reads template specifications from 'Description_Templates'!A:F.
+        Cols: A=Service Category (Order Type), B=Description, C=Template Name, D=Machine, E=Labor Minutes, F=Stitch Count.
         """
         templates = []
         if not getattr(self, 'service', None): return templates
         try:
             result = self.service.spreadsheets().values().get(
                 spreadsheetId=self.spreadsheet_id,
-                range="'Description_Templates'!A:E"
+                range="'Description_Templates'!A:F"
             ).execute()
             rows = result.get('values', [])
             for i, row in enumerate(rows):
@@ -65,19 +65,31 @@ class GoogleSheetsService:
                 category = str(row[1]).strip() if len(row) > 1 else ""
                 template_name = str(row[2]).strip() if len(row) > 2 else ""
                 machine = str(row[3]).strip() if len(row) > 3 else "None"
-                default_hours = 0.0
+                labor_mins = 0.0
                 if len(row) > 4:
                     try:
-                        default_hours = float(str(row[4]).strip())
+                        clean_lm = str(row[4]).replace(",", "").strip()
+                        labor_mins = float(clean_lm)
                     except ValueError:
-                        default_hours = 0.0
+                        labor_mins = 0.0
+                base_stitches = 0
+                if len(row) > 5:
+                    try:
+                        clean_st = str(row[5]).replace(",", "").strip()
+                        base_stitches = int(float(clean_st))
+                    except (ValueError, TypeError):
+                        base_stitches = 0
                 if template_name:
                     templates.append({
                         "order_type": order_type,
                         "category": category,
                         "template_name": template_name,
                         "machine": machine,
-                        "default_labor_hours": default_hours
+                        "labor_minutes": labor_mins,
+                        "default_labor_minutes": labor_mins,
+                        "default_labor_hours": round(labor_mins / 60.0, 2),
+                        "stitch_count": base_stitches,
+                        "base_stitch_count": base_stitches
                     })
             return templates
         except Exception as e:
@@ -97,17 +109,21 @@ class GoogleSheetsService:
                 return t
         return None
 
-    def create_template_if_not_exists(self, order_type: str, template_name: str, category: str = "", machine: str = "None", default_labor_hours: float = 1.0) -> bool:
-        """Appends a new template to 'Description_Templates'!A:E if it doesn't already exist."""
+    def create_template_if_not_exists(self, order_type: str, template_name: str, category: str = "", machine: str = "None", default_labor_minutes: float = 60.0, default_labor_hours: float = None, stitch_count: int = 0) -> bool:
+        """Appends a new template to 'Description_Templates'!A:F if it doesn't already exist."""
         if not getattr(self, 'service', None) or not template_name: return False
         existing = self.get_template_by_name(template_name)
         if existing:
             return False
         try:
-            body = {'values': [[order_type, category, template_name, machine, str(default_labor_hours)]]}
+            if default_labor_hours is not None and default_labor_hours > 0 and default_labor_minutes == 60.0:
+                final_mins = default_labor_hours * 60.0
+            else:
+                final_mins = default_labor_minutes
+            body = {'values': [[order_type, category, template_name, machine, str(final_mins), str(stitch_count)]]}
             self.service.spreadsheets().values().append(
                 spreadsheetId=self.spreadsheet_id,
-                range="'Description_Templates'!A:E",
+                range="'Description_Templates'!A:F",
                 valueInputOption="USER_ENTERED",
                 body=body
             ).execute()
@@ -158,6 +174,8 @@ class GoogleSheetsService:
         qty = int(state.quantity) if state.quantity else 1
         stitches = int(state.stitch_count) if state.stitch_count and str(state.stitch_count).isdigit() else 0
         labor_hrs = float(state.labor_hours or 0.0)
+        if labor_hrs <= 0 and getattr(state, "labor_minutes", None) and float(state.labor_minutes) > 0:
+            labor_hrs = round(float(state.labor_minutes) / 60.0, 2)
         
         # Standard column order (A-P) for Orders tab:
         # A: Order Date, B: Order ID, C: Customer ID, D: Customer Name, E: Phone,
@@ -1371,6 +1389,8 @@ class GoogleSheetsService:
             qty = int(state.quantity or 1)
             stitches = int(state.stitch_count or 0)
             labor_hrs = float(state.labor_hours or 0.0)
+            if labor_hrs <= 0 and getattr(state, "labor_minutes", None) and float(state.labor_minutes) > 0:
+                labor_hrs = round(float(state.labor_minutes) / 60.0, 2)
 
             updated_values = [[
                 state.customer_id or "Unknown",

@@ -20,6 +20,7 @@ class AgentState(BaseModel):
     stitch_count: Optional[int] = None
     quantity: Optional[int] = Field(default=1)
     labor_hours: Optional[float] = Field(default=0.0)
+    labor_minutes: Optional[float] = Field(default=0.0)
     requested_delivery_date: Optional[str] = None
     order_id: Optional[str] = None
     

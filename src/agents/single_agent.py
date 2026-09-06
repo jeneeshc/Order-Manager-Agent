@@ -161,7 +161,10 @@ class CJSSingleAgent:
         # -------------------------------------------------------------
         # 1. Main Menu Triggers
         # -------------------------------------------------------------
-        if msg_lower in {"hi", "hello", "menu", "help", "start", "hey"}:
+        clean_words = set(msg_lower.replace("!", "").replace(".", "").replace("?", "").replace(",", "").split())
+        greeting_words = {"hi", "hello", "hey", "menu", "start", "help", "hie", "hii", "namaste", "morning", "evening"}
+        if (msg_lower in {"hi", "hello", "menu", "help", "start", "hey"}
+                or (clean_words & greeting_words and len(clean_words) <= 3)):
             state.active_menu = "MAIN"
             state.pending_adjustment_type = None
             state.pending_adjustment_order_id = None
@@ -183,6 +186,21 @@ class CJSSingleAgent:
         # Option 1: Open Order Form (only from main menu or top level)
         if ((raw_msg == "1" and state.active_menu in ("MAIN", None))
                 or msg_lower in {"new order", "create order", "order form", "open form"}):
+            first_tmpl = self.db.get_description_templates()
+            init_st = int(first_tmpl[0].get("stitch_count") or 0) if first_tmpl else 50000
+            init_lm = int(first_tmpl[0].get("labor_minutes") or 0) if first_tmpl else 360
+            init_tname = first_tmpl[0].get("template_name") if first_tmpl else "Saree Scallop"
+            state.editing_order_id = None
+            state.flow_init_data = {
+                "editing_order_id": "",
+                "init_customer": "",
+                "init_order_type": "Machine Embroidery",
+                "init_template": init_tname,
+                "init_quantity": 1,
+                "init_delivery_date": str(int(time.time() * 1000)),
+                "init_stitch_count": init_st,
+                "init_labor_minutes": init_lm
+            }
             state.send_order_form = True
             state.active_menu = None
             state.next_step = "END"
@@ -493,9 +511,14 @@ class CJSSingleAgent:
                 otype = matched.get("order_type") or ("Machine Embroidery" if matched.get("machine") in ("Ricoma", "Aakruthi") else "Embroidery designing")
                 tmpl = matched.get("template") or matched.get("embroidery_type") or "General"
                 qty = int(matched.get("quantity") or 1)
-                stitches = int(matched.get("stitch_count") or 0)
-                labor = float(matched.get("labor_hours") or 1.0)
                 d_date = matched.get("delivery_date") or ""
+                tmpl_data = self.db.get_template_by_name(tmpl) or {}
+                stitches = int(matched.get("stitch_count") or tmpl_data.get("stitch_count") or 0)
+                stored_labor = float(matched.get("labor_hours") or 0.0)
+                if stored_labor > 0:
+                    labor_mins = int(round(stored_labor * 60.0)) if stored_labor < 24 else int(stored_labor)
+                else:
+                    labor_mins = int(tmpl_data.get("labor_minutes") or 60)
                 
                 state.editing_order_id = target_id
                 state.flow_init_data = {
@@ -506,7 +529,7 @@ class CJSSingleAgent:
                     "init_quantity": qty,
                     "init_delivery_date": date_to_ms(d_date),
                     "init_stitch_count": stitches,
-                    "init_labor_hours": labor
+                    "init_labor_minutes": labor_mins
                 }
                 state.send_order_form = True
                 state.active_menu = None
@@ -670,6 +693,16 @@ Use WhatsApp formatting (*bold*, bullet points).
 User's Message: "{state.raw_message}"
 
 Guidelines:
+- If Boss is greeting (saying hi, hello, etc.), output the full Main Menu:
+1️⃣ New Order Form
+2️⃣ Adjust Existing Order (WhatsApp Form edit)
+3️⃣ Invoicing & Billing
+4️⃣ Daily Briefing & Tasks
+5️⃣ Vendors & Expenses
+6️⃣ Add New Customer
+7️⃣ Add New Template
+8️⃣ Add New Order Type
+- If Boss wants to modify/edit an active order, suggest replying '2' (Adjust Existing Order).
 - If Boss is asking about placing an order, suggest replying '1' to open the instant WhatsApp Order Form.
 - If Boss is asking what to do today or wants a schedule summary, suggest replying '4' for the 5-Pillar Daily Briefing.
 - If Boss is asking about invoices or payments, summarize or suggest replying '3'.
@@ -686,11 +719,6 @@ Guidelines:
             state.final_reply = reply_text
         except Exception as e:
             print(f"[{self.name}] LLM invocation error: {e}")
-            state.final_reply = (
-                "Hello Boss! How can I assist you today? 🧵\n\n"
-                "• Reply *'1'* for New Order Form\n"
-                "• Reply *'4'* for Today's Work & Briefing\n"
-                "• Reply *'Hi'* to view the full menu."
-            )
+            state.final_reply = MAIN_MENU_TEXT
 
         return state

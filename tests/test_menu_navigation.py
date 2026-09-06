@@ -63,7 +63,7 @@ def mock_sheets_service():
 def test_greeting_triggers_main_menu(mock_sheets_service):
     collector = OrderCollectorAgent()
     
-    for word in ["hi", "Hi", "HELLO", "menu", "help", "Start"]:
+    for word in ["hi", "Hi", "HELLO", "menu", "help", "Start", "Hi!", "Hii", "Hey!"]:
         state = AgentState(raw_message=word)
         result = collector.process(state)
         

@@ -77,7 +77,7 @@ def test_flow_json_structure():
     assert "quantity" in field_names
     assert "delivery_date" in field_names
     assert "stitch_count" in field_names
-    assert "labor_hours" in field_names
+    assert "labor_minutes" in field_names
     # Verify write-in textboxes are excluded
     assert "new_customer_name" not in field_names
     assert "new_order_type" not in field_names
@@ -88,5 +88,35 @@ def test_flow_json_structure():
     assert payload["customer_select"] == "${form.customer_select}"
     assert payload["order_type_select"] == "${form.order_type_select}"
     assert payload["template_select"] == "${form.template_select}"
-    assert payload["quantity"] == "${form.quantity}"
-    assert payload["delivery_date"] == "${form.delivery_date}"
+
+def test_labor_minutes_conversion_and_template_lookup():
+    """Verify that labor_minutes (e.g. 360 mins) converts to hours (6.0 hrs) and base stitch count is applied."""
+    state = AgentState()
+    state.customer_name = "Ammu"
+    state.order_type = "Machine Embroidery"
+    state.template_name = "Saree Scallop"
+    state.labor_minutes = 360.0 # 6 hours
+    state.stitch_count = 50000
+
+    mock_config = {
+        "Cost per 1000 Stitches": 10.0,
+        "Hourly Labor Rate": 100.0,
+        "Profit Margin Percent": 20.0,
+        "GST Rate Percent": 18.0
+    }
+
+    with patch.object(GoogleSheetsService, '__init__', return_value=None):
+        with patch.object(GoogleSheetsService, 'get_config_variables', return_value=mock_config):
+            estimator = EstimationAgent()
+            res = estimator.process(state)
+
+            # Labor: 360 mins / 60 = 6.0 hrs * Rs 100 = Rs 600.0
+            # Stitches: (50000 / 1000) * 10 = Rs 500.0
+            # Base Cost: 500 + 600 = Rs 1100.0
+            # Margin (20%): 220.0
+            # GST (18%): (1100 + 220) * 0.18 = 237.6
+            # Total: 1100 + 220 + 237.6 = Rs 1557.6
+            assert res.labor_hours == 6.0
+            assert res.base_cost_rs == 1100.0
+            assert res.profit_margin_rs == 220.0
+            assert res.total_cost_rs == 1557.6

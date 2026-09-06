@@ -199,34 +199,60 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                 except (ValueError, TypeError):
                     initial_state.quantity = 1
 
-                # 5. Labor Hours
-                raw_labor = interactive_payload.get("labor_hours") or interactive_payload.get("hours_required")
-                if raw_labor is not None and str(raw_labor).strip():
+                # 5. Labor Minutes & Hours (Converted to Hours for Cost Calculation)
+                raw_labor_mins = interactive_payload.get("labor_minutes")
+                raw_labor_hrs = interactive_payload.get("labor_hours") or interactive_payload.get("hours_required")
+                if raw_labor_mins is not None and str(raw_labor_mins).strip():
                     try:
-                        initial_state.labor_hours = float(str(raw_labor).strip())
+                        lm = float(str(raw_labor_mins).strip())
+                        initial_state.labor_minutes = lm
+                        initial_state.labor_hours = round(lm / 60.0, 2)
+                    except (ValueError, TypeError):
+                        tmpl_data = db_service.get_template_by_name(initial_state.template_name)
+                        lm = float(tmpl_data.get("labor_minutes") or tmpl_data.get("default_labor_minutes") or 60.0) if tmpl_data else 60.0
+                        initial_state.labor_minutes = lm
+                        initial_state.labor_hours = round(lm / 60.0, 2)
+                elif raw_labor_hrs is not None and str(raw_labor_hrs).strip():
+                    try:
+                        val = float(str(raw_labor_hrs).strip())
+                        if val > 24: # Likely entered in minutes
+                            initial_state.labor_minutes = val
+                            initial_state.labor_hours = round(val / 60.0, 2)
+                        else:
+                            initial_state.labor_hours = val
+                            initial_state.labor_minutes = round(val * 60.0, 1)
                     except (ValueError, TypeError):
                         tmpl_data = db_service.get_template_by_name(initial_state.template_name)
                         initial_state.labor_hours = tmpl_data.get("default_labor_hours", 1.0) if tmpl_data else 1.0
+                        initial_state.labor_minutes = round(initial_state.labor_hours * 60.0, 1)
                 else:
                     tmpl_data = db_service.get_template_by_name(initial_state.template_name)
-                    initial_state.labor_hours = tmpl_data.get("default_labor_hours", 1.0) if tmpl_data else 1.0
-
-                # Auto-register new template if not already present in Description_Templates
-                db_service.create_template_if_not_exists(
-                    order_type=initial_state.order_type,
-                    template_name=initial_state.template_name,
-                    default_labor_hours=initial_state.labor_hours or 1.0
-                )
+                    if tmpl_data:
+                        lm = float(tmpl_data.get("labor_minutes") or tmpl_data.get("default_labor_minutes") or 60.0)
+                        initial_state.labor_minutes = lm
+                        initial_state.labor_hours = round(lm / 60.0, 2)
+                    else:
+                        initial_state.labor_minutes = 60.0
+                        initial_state.labor_hours = 1.0
 
                 # 6. Stitch Count
                 if initial_state.order_type.lower() in {"embroidery design", "embroidery designing"}:
                     initial_state.stitch_count = 0
                 else:
                     raw_stitches = interactive_payload.get("stitch_count")
-                    if raw_stitches is not None and str(raw_stitches).strip().isdigit():
+                    if raw_stitches is not None and str(raw_stitches).strip().isdigit() and int(str(raw_stitches).strip()) > 0:
                         initial_state.stitch_count = int(str(raw_stitches).strip())
                     else:
-                        initial_state.stitch_count = 0
+                        tmpl_data = db_service.get_template_by_name(initial_state.template_name)
+                        initial_state.stitch_count = int(tmpl_data.get("stitch_count") or tmpl_data.get("base_stitch_count") or 0) if tmpl_data else 0
+
+                # Auto-register new template if not already present in Description_Templates
+                db_service.create_template_if_not_exists(
+                    order_type=initial_state.order_type,
+                    template_name=initial_state.template_name,
+                    default_labor_minutes=initial_state.labor_minutes or 60.0,
+                    stitch_count=initial_state.stitch_count or 0
+                )
                 
                 # 7. Delivery Date & Editing Order ID
                 initial_state.requested_delivery_date = str(

@@ -59,17 +59,30 @@ class EstimationAgent:
             stitches_display = "0 (Software Design)"
         else:
             stitches = int(state.stitch_count or 0)
+            if stitches <= 0 and state.template_name:
+                tmpl = db.get_template_by_name(state.template_name)
+                if tmpl and (tmpl.get("stitch_count") or tmpl.get("base_stitch_count")):
+                    stitches = int(tmpl.get("stitch_count") or tmpl.get("base_stitch_count") or 0)
+                    state.stitch_count = stitches
             stitch_cost = round(((stitches * qty) / 1000.0) * base_rate, 2)
             stitches_display = f"{stitches} st x {qty} qty / 1000 x Rs {base_rate}"
 
-        # 2. Labor Cost
+        # 2. Labor Cost (Converted from Labor Minutes to Hours)
         labor_hours = float(state.labor_hours or 0.0)
-        # If labor hours not set, attempt template pre-population
-        if labor_hours <= 0 and state.template_name:
+        if getattr(state, "labor_minutes", None) and float(state.labor_minutes) > 0:
+            labor_hours = round(float(state.labor_minutes) / 60.0, 2)
+            state.labor_hours = labor_hours
+        elif labor_hours <= 0 and state.template_name:
             tmpl = db.get_template_by_name(state.template_name)
-            if tmpl and tmpl.get("default_labor_hours"):
-                labor_hours = float(tmpl["default_labor_hours"])
-                state.labor_hours = labor_hours
+            if tmpl:
+                if tmpl.get("labor_minutes") or tmpl.get("default_labor_minutes"):
+                    lm = float(tmpl.get("labor_minutes") or tmpl.get("default_labor_minutes"))
+                    labor_hours = round(lm / 60.0, 2)
+                    state.labor_minutes = lm
+                    state.labor_hours = labor_hours
+                elif tmpl.get("default_labor_hours"):
+                    labor_hours = float(tmpl["default_labor_hours"])
+                    state.labor_hours = labor_hours
 
         labor_cost = round(labor_hours * hourly_rate, 2)
 
