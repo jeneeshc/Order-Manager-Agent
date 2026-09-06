@@ -1,7 +1,7 @@
 # System Architecture
 ## CJS Designs — AI-Powered WhatsApp Order Management System
 
-> Updated: September 2026 — reflects the updated system architecture and business logic overhaul.
+> Updated: September 2026 — Single Unified Agent Architecture (`CJSSingleAgent`).
 
 ## High-Level Architecture Diagram
 
@@ -18,28 +18,15 @@ graph TD
         WA <-->|POST /webhook| API[FastAPI Webhook &\nFlows Controller]
         API -.->|Immediate Ack 🔄| WA
         API -.->|Interactive Form / Flow| WA
-        API -->|invoke| Graph
 
-        subgraph Graph [LangGraph — Supervisor-Led Loopback Graph]
-            SUP[Supervisor\nAgent 0\nRouter & Synthesizer]
-
-            SUP -->|route| COL[Collector\nAgent 1\nForm & Template Extraction]
-            SUP -->|route| SCH[Scheduler\nAgent 2\nCapacity & Machine Routing]
-            SUP -->|route| EST[Estimator\nAgent 3\n4-Factor Costing]
-            SUP -->|route| SOC[Social Media\nAgent 4\nMarketing Caption]
-            SUP -->|route| INV[Invoicing\nAgent 5\nBilling Summaries]
-            SUP -->|route| SEC[Secretary\nAgent 6\nDaily Briefing]
-
-            COL -->|return| SUP
-            SCH -->|return| SUP
-            EST -->|return| SUP
-            SOC -->|return| SUP
-            INV -->|return| SUP
-            SEC -->|return| SUP
+        subgraph SingleAgent [CJSSingleAgent — Unified Single Agent Engine]
+            FAST[Form Intake Fast-Path\nDeterministic 0-LLM Pipeline\nScheduler + Estimator + DB Append]
+            MENU[Menu & Shortcuts Engine\nDeterministic State Machine\nOptions 1-8, Codes 21-81]
+            LLM[Conversational Intelligence\nSingle Gemini Flash Call\nFreeform Chat & Inquiries]
         end
 
+        API -->|dispatch| SingleAgent
         API -->|send reply| WA
-        API -->|trigger brief| SEC
     end
 
     %% External Applications & Services
@@ -48,12 +35,7 @@ graph TD
     Memory[(MemoryService\nSession Persistence)]
 
     CJSAcc <-->|invoices, payments & ledgers| GSheets
-    COL <-->|read Description_Templates & Customers| GSheets
-    SCH <-->|read Description_Templates, Orders & Holidays| GSheets
-    EST <-->|read Config| GSheets
-    INV <-->|read Orders & Sales_Ledger| GSheets
-    SEC <-->|read Orders, Holidays, Reminders| GSheets
-    API <-->|read/write Orders| GSheets
+    SingleAgent <-->|read/write sheets| GSheets
     API <-->|get/set/clear| Memory
 
     %% Styling

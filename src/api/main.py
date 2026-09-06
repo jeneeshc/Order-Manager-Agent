@@ -280,7 +280,7 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
             
             if rebuilt_state.send_order_form:
                  # Trigger native WhatsApp Flow
-                 flow_id = os.getenv("WHATSAPP_FLOW_ID")
+                 flow_id = os.getenv("WHATSAPP_FLOW_ID") or "2592939917793397"
                  msg_text = rebuilt_state.final_reply or "Please fill out the order form below, Boss:"
                  if flow_id:
                      sent = whatsapp_service.send_flow_message(sender_phone, flow_id, message_text=msg_text)
