@@ -104,7 +104,7 @@ def test_order_edit_form_selection(mock_sheets_service):
     assert result.editing_order_id == "CJS-869BC6"
     assert result.flow_init_data is not None
     assert result.flow_init_data["editing_order_id"] == "CJS-869BC6"
-    assert result.flow_init_data["customer_select"] == "Shwetha"
+    assert result.flow_init_data["init_customer"] == "Shwetha"
     assert "Opening WhatsApp Form to edit Order *CJS-869BC6*" in result.final_reply
 
 def test_main_menu_option_3_invoicing_submenu(mock_sheets_service):

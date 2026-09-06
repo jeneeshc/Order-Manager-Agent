@@ -495,13 +495,13 @@ class CJSSingleAgent:
                 state.editing_order_id = target_id
                 state.flow_init_data = {
                     "editing_order_id": target_id,
-                    "customer_select": cust,
-                    "order_type_select": otype,
-                    "template_select": tmpl,
-                    "quantity": qty,
-                    "delivery_date": date_to_ms(d_date),
-                    "stitch_count": stitches,
-                    "labor_hours": labor
+                    "init_customer": cust,
+                    "init_order_type": otype,
+                    "init_template": tmpl,
+                    "init_quantity": qty,
+                    "init_delivery_date": date_to_ms(d_date),
+                    "init_stitch_count": stitches,
+                    "init_labor_hours": labor
                 }
                 state.send_order_form = True
                 state.active_menu = None

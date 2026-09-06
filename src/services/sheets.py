@@ -652,11 +652,76 @@ class GoogleSheetsService:
                 cname = str(row[1]).strip()
                 if cid and cname:
                     mapping[cid] = cname
-            
             return mapping
         except Exception as e:
             print(f"[SheetsAPI] get_all_customers_map failed: {e}")
             return mapping
+
+    def get_order(self, order_id: str) -> dict | None:
+        """
+        Retrieves a single order from 'Orders'!A:P by its Order ID (Column B).
+        Returns normalized dictionary with customer, template, quantity, stitches, machine, delivery_date, cost.
+        """
+        if not self.service or not order_id: return None
+        try:
+            customer_map = self.get_all_customers_map()
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, range="'Orders'!A:P"
+            ).execute()
+            rows = result.get('values', [])
+            target = order_id.strip().upper()
+            for i, row in enumerate(rows):
+                if i == 0 or len(row) < 2: continue
+                if str(row[1]).strip().upper() == target:
+                    status_col_k = str(row[10]).strip().lower() if len(row) > 10 else ""
+                    status_col_n = str(row[13]).strip().lower() if len(row) > 13 else ""
+                    is_new = status_col_k in ("ricoma", "aakruthi", "none") or status_col_n in ("estimated", "pending", "invoiced", "completed", "paid")
+                    
+                    if is_new:
+                        cid = str(row[2]).strip() if len(row) > 2 else "Unknown"
+                        cname = str(row[3]).strip() if len(row) > 3 and str(row[3]).strip() else customer_map.get(cid, "Unknown")
+                        otype = str(row[5]).strip() if len(row) > 5 else "Machine Embroidery"
+                        tmpl = str(row[6]).strip() if len(row) > 6 else "General"
+                        qty = int(row[7]) if len(row) > 7 and str(row[7]).isdigit() else 1
+                        stitches = int(row[8]) if len(row) > 8 and str(row[8]).isdigit() else 0
+                        labor = float(row[9]) if len(row) > 9 and str(row[9]).replace(".", "", 1).isdigit() else 0.0
+                        mach = str(row[10]).strip() if len(row) > 10 else "None"
+                        deliv = str(row[11]).strip() if len(row) > 11 else ""
+                        cost = str(row[12]).strip() if len(row) > 12 else "Rs 0"
+                        reasoning = str(row[14]).strip() if len(row) > 14 else ""
+                    else:
+                        cid = str(row[2]).strip() if len(row) > 2 else "Unknown"
+                        cname = customer_map.get(cid, cid) if len(row) > 2 else "Unknown"
+                        otype = "Machine Embroidery"
+                        tmpl = str(row[5]).strip() if len(row) > 5 else "General"
+                        qty = 1
+                        stitches = int(row[6]) if len(row) > 6 and str(row[6]).isdigit() else 0
+                        labor = 0.0
+                        mach = str(row[7]).strip() if len(row) > 7 else "None"
+                        deliv = str(row[8]).strip() if len(row) > 8 else ""
+                        cost = str(row[9]).strip() if len(row) > 9 else "Rs 0"
+                        reasoning = str(row[11]).strip() if len(row) > 11 else ""
+
+                    return {
+                        "order_id": str(row[1]).strip(),
+                        "customer": cname,
+                        "customer_name": cname,
+                        "customer_id": cid,
+                        "order_type": otype,
+                        "template": tmpl,
+                        "embroidery_type": tmpl,
+                        "quantity": qty,
+                        "stitch_count": stitches,
+                        "labor_hours": labor,
+                        "machine": mach,
+                        "delivery_date": deliv,
+                        "cost": cost,
+                        "reasoning": reasoning
+                    }
+            return None
+        except Exception as e:
+            print(f"[SheetsAPI] get_order failed: {e}")
+            return None
 
     def find_similar_order(self, customer_id: str, fabric_type: str, embroidery_type: str, stitch_count: int) -> dict | None:
         """
@@ -1185,8 +1250,9 @@ class GoogleSheetsService:
 
     def get_active_orders_summary(self, limit: int = 5) -> list:
         """
-        Fetches the most recent active/in-progress orders (not completed/invoiced)
+        Fetches the most recent active/in-progress orders (excluding completed, complete, invoiced, paid, cancelled)
         from 'Orders'!A:P to present as quick-select options for Boss.
+        Accurately handles both new (16-col) and legacy schema layouts.
         """
         active_orders = []
         if not self.service: return active_orders
@@ -1199,21 +1265,44 @@ class GoogleSheetsService:
             rows = result.get('values', [])
             for i, row in enumerate(rows):
                 if i == 0 or len(row) < 2: continue
-                status = str(row[13]).strip().lower() if len(row) > 13 else (str(row[10]).strip().lower() if len(row) > 10 else "")
-                if status in ("completed", "invoiced"): continue
-                
-                oid = row[1].strip()
-                cid = row[2].strip() if len(row) > 2 else "Unknown"
-                cname = row[3].strip() if len(row) > 3 and str(row[3]).strip() else customer_map.get(cid, cid)
-                order_type = row[5] if len(row) > 5 else "Machine Embroidery"
-                template = row[6] if len(row) > 6 else (row[5] if len(row) > 5 else "General")
-                machine = row[10] if len(row) > 10 else (row[7] if len(row) > 7 else "None")
-                delivery = row[11] if len(row) > 11 else (row[8] if len(row) > 8 else "Unknown")
-                cost = row[12] if len(row) > 12 else (row[9] if len(row) > 9 else "Rs 0")
-                
-                qty = int(row[7]) if len(row) > 7 and str(row[7]).isdigit() else 1
-                stitches = int(row[8]) if len(row) > 8 and str(row[8]).isdigit() else 0
-                labor_hrs = float(row[9]) if len(row) > 9 and str(row[9]).replace(".", "", 1).isdigit() else 0.0
+                oid = str(row[1]).strip()
+                if not oid or oid.lower() in ("order id", "id"): continue
+
+                status_col_k = str(row[10]).strip().lower() if len(row) > 10 else ""
+                status_col_n = str(row[13]).strip().lower() if len(row) > 13 else ""
+                is_new_schema = status_col_k in ("ricoma", "aakruthi", "none") or status_col_n in ("estimated", "pending", "invoiced", "completed", "paid", "cancelled")
+
+                if is_new_schema:
+                    status = status_col_n
+                    cid = str(row[2]).strip() if len(row) > 2 else "Unknown"
+                    cname = str(row[3]).strip() if len(row) > 3 and str(row[3]).strip() else customer_map.get(cid, "Unknown")
+                    order_type = str(row[5]).strip() if len(row) > 5 else "Machine Embroidery"
+                    template = str(row[6]).strip() if len(row) > 6 else "General"
+                    qty = int(row[7]) if len(row) > 7 and str(row[7]).isdigit() else 1
+                    stitches = int(row[8]) if len(row) > 8 and str(row[8]).isdigit() else 0
+                    labor_hrs = float(row[9]) if len(row) > 9 and str(row[9]).replace(".", "", 1).isdigit() else 0.0
+                    machine = str(row[10]).strip() if len(row) > 10 else "None"
+                    delivery = str(row[11]).strip() if len(row) > 11 else ""
+                    cost = str(row[12]).strip() if len(row) > 12 else "Rs 0"
+                else:
+                    status = status_col_k
+                    cid = str(row[2]).strip() if len(row) > 2 else "Unknown"
+                    cname = customer_map.get(cid, cid) if len(row) > 2 else "Unknown"
+                    order_type = "Machine Embroidery"
+                    template = str(row[5]).strip() if len(row) > 5 else "General"
+                    qty = 1
+                    stitches = int(row[6]) if len(row) > 6 and str(row[6]).isdigit() else 0
+                    labor_hrs = 0.0
+                    machine = str(row[7]).strip() if len(row) > 7 else "None"
+                    delivery = str(row[8]).strip() if len(row) > 8 else ""
+                    cost = str(row[9]).strip() if len(row) > 9 else "Rs 0"
+
+                if status in ("completed", "complete", "invoiced", "paid", "cancelled"):
+                    continue
+
+                # Ensure delivery date doesn't contain long multiline reasoning
+                if "\n" in delivery or len(delivery) > 25:
+                    delivery = delivery.split("\n")[0][:25].strip()
 
                 active_orders.append({
                     "order_id": oid,
