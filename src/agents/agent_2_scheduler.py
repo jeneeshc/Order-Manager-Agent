@@ -49,9 +49,8 @@ class ProductionSchedulerAgent:
         if state.template_name:
             template_info = db.get_template_by_name(state.template_name)
 
-        machine_assigned = None
-        if template_info and template_info.get("machine") and template_info["machine"].lower() != "none":
-            machine_assigned = template_info["machine"]
+        if isinstance(template_info, dict) and template_info.get("machine") and str(template_info["machine"]).lower() != "none":
+            machine_assigned = str(template_info["machine"])
             print(f"[{self.name}] Deterministically matched machine from template: '{machine_assigned}'")
         else:
             # Heuristic keyword fallback for machine routing

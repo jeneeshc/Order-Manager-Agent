@@ -38,7 +38,7 @@ class GoogleSheetsService:
         Cols: A=Order Type, B=Category, C=Template Name, D=Machine Allocation, E=Default Labor Hours.
         """
         templates = []
-        if not self.service: return templates
+        if not getattr(self, 'service', None): return templates
         try:
             result = self.service.spreadsheets().values().get(
                 spreadsheetId=self.spreadsheet_id,
@@ -70,13 +70,13 @@ class GoogleSheetsService:
             print(f"[SheetsAPI] get_description_templates failed: {e}")
             return templates
 
-    def get_template_by_name(self, template_name: str) -> dict | None:
-        """Looks up a template from 'Description_Templates' tab by case-insensitive name."""
-        if not template_name: return None
-        target = template_name.strip().lower()
+    def get_template_by_name(self, name: str) -> dict:
+        """Finds matching template dict by template_name (exact or case-insensitive partial match)."""
+        if not name: return None
+        target = name.strip().lower()
         templates = self.get_description_templates()
         for t in templates:
-            if t["template_name"].lower() == target:
+            if t["template_name"].strip().lower() == target:
                 return t
         for t in templates:
             if target in t["template_name"].lower() or t["template_name"].lower() in target:
@@ -85,7 +85,7 @@ class GoogleSheetsService:
 
     def create_template_if_not_exists(self, order_type: str, template_name: str, category: str = "", machine: str = "None", default_labor_hours: float = 1.0) -> bool:
         """Appends a new template to 'Description_Templates'!A:E if it doesn't already exist."""
-        if not self.service or not template_name: return False
+        if not getattr(self, 'service', None) or not template_name: return False
         existing = self.get_template_by_name(template_name)
         if existing:
             return False
@@ -106,7 +106,7 @@ class GoogleSheetsService:
     def get_all_customers_list(self) -> list:
         """Returns sorted list of all active customer names from 'Customers'!B:B."""
         customers = []
-        if not self.service: return customers
+        if not getattr(self, 'service', None): return customers
         try:
             result = self.service.spreadsheets().values().get(
                 spreadsheetId=self.spreadsheet_id, range="Customers!B:B"

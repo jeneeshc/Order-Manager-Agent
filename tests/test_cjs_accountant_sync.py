@@ -30,10 +30,11 @@ def test_config_variables_parsing():
         assert config["Studio Name"] == "CJS Designs"
 
 def test_estimator_with_dynamic_config_rate():
-    """Test that EstimationAgent calculates cost using stitches, labor hours, and GST from Config tab."""
+    """Test that EstimationAgent calculates cost using 4-factor costing from Config tab."""
     mock_config = {
         "Cost per 1000 Stitches": 10.0,
         "Hourly Labor Rate": 100.0,
+        "Profit Margin Percent": 20.0,
         "GST Rate Percent": 18.0
     }
     with patch.object(GoogleSheetsService, '__init__', return_value=None):
@@ -43,8 +44,8 @@ def test_estimator_with_dynamic_config_rate():
             # Case 1: 50,000 stitches + 2 labor hours
             state = AgentState(
                 customer_name="Test Customer",
-                fabric_type="Custom Silk",
-                embroidery_type="Zari",
+                order_type="Machine Embroidery",
+                template_name="Zari",
                 stitch_count=50000,
                 labor_hours=2.0
             )
@@ -52,31 +53,37 @@ def test_estimator_with_dynamic_config_rate():
             
             # Stitches: (50000 / 1000) * 10 = Rs 500.0
             # Labor: 2.0 * 100 = Rs 200.0
-            # Subtotal: Rs 700.0
-            # GST: 700.0 * 0.18 = Rs 126.0
-            # Total: Rs 826.0
+            # Base Cost: Rs 700.0
+            # Profit Margin (20%): Rs 140.0
+            # Subtotal: Rs 840.0
+            # GST (18%): 840.0 * 0.18 = Rs 151.2
+            # Total: Rs 991.2
             assert res.base_cost_rs == 700.0
-            assert res.gst_amount_rs == 126.0
-            assert res.total_cost_rs == 826.0
-            assert "Calculated cost using Config parameters" in res.aggregated_reasoning
-            assert "GST (18.0%): Rs 126.0" in res.aggregated_reasoning
+            assert res.profit_margin_rs == 140.0
+            assert res.gst_amount_rs == 151.2
+            assert res.total_cost_rs == 991.2
+            assert "Strict 4-Factor Cost Breakdown" in res.aggregated_reasoning
+            assert "GST (18.0%): Rs 151.2" in res.aggregated_reasoning
 
             # Case 2: Zero / omitted labor hours
             state2 = AgentState(
                 customer_name="Test Customer",
-                fabric_type="Cotton",
-                embroidery_type="Floral",
+                order_type="Machine Embroidery",
+                template_name="Floral",
                 stitch_count=20000
             )
             res2 = agent.process(state2)
             # Stitches: (20000 / 1000) * 10 = Rs 200.0
             # Labor: 0.0 * 100 = Rs 0.0
-            # Subtotal: Rs 200.0
-            # GST: 200.0 * 0.18 = Rs 36.0
-            # Total: Rs 236.0
+            # Base Cost: Rs 200.0
+            # Profit Margin (20%): Rs 40.0
+            # Subtotal: Rs 240.0
+            # GST: 240.0 * 0.18 = Rs 43.2
+            # Total: Rs 283.2
             assert res2.base_cost_rs == 200.0
-            assert res2.gst_amount_rs == 36.0
-            assert res2.total_cost_rs == 236.0
+            assert res2.profit_margin_rs == 40.0
+            assert res2.gst_amount_rs == 43.2
+            assert res2.total_cost_rs == 283.2
 
 def test_sales_ledger_parsing():
     """Test that GoogleSheetsService accurately reads and parses the 11-column Sales_Ledger."""

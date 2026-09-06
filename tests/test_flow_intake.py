@@ -19,24 +19,15 @@ from src.agents.agent_3_estimator import EstimationAgent
 from src.services.sheets import GoogleSheetsService
 
 def test_flow_payload_injection_and_costing():
-    """Verify that interactive form payload with hours_required correctly computes costing."""
-    interactive_payload = {
-        "customer_name": "Meera Boutique",
-        "fabric_type": "Silk",
-        "garment_type": "Kurti",
-        "embroidery_style": "Floral",
-        "stitch_count": "45000",
-        "hours_required": "2.5",
-        "delivery_date": "2026-09-20"
-    }
-
+    """Verify that interactive form payload with hours and stitches computes 4-factor costing."""
     state = AgentState()
-    state.customer_name = interactive_payload["customer_name"]
-    state.fabric_type = interactive_payload["fabric_type"]
-    state.embroidery_type = f"{interactive_payload['embroidery_style']} {interactive_payload['garment_type']}".strip()
-    state.stitch_count = int(interactive_payload["stitch_count"])
-    state.labor_hours = float(interactive_payload["hours_required"])
-    state.requested_delivery_date = interactive_payload["delivery_date"]
+    state.customer_name = "Meera Boutique"
+    state.order_type = "Machine Embroidery"
+    state.template_name = "Kurti Neck"
+    state.stitch_count = 45000
+    state.quantity = 1
+    state.labor_hours = 2.5
+    state.requested_delivery_date = "2026-09-20"
 
     assert state.stitch_count == 45000
     assert state.labor_hours == 2.5
@@ -68,21 +59,34 @@ def test_flow_payload_injection_and_costing():
             assert "Strict 4-Factor Cost Breakdown" in res.aggregated_reasoning
 
 def test_flow_json_structure():
-    """Verify that deploy_flow.py's FLOW_JSON has hours_required and correct types."""
-    from scripts.deploy_flow import FLOW_JSON
+    """Verify that deploy_flow.py's FLOW_JSON has dropdowns and write-in fields."""
+    from scripts.deploy_flow import build_flow_json
 
-    screen = FLOW_JSON["screens"][0]
+    with patch.object(GoogleSheetsService, '__init__', return_value=None):
+        with patch.object(GoogleSheetsService, 'get_all_customers_list', return_value=["Ammu", "Anna"]):
+            with patch.object(GoogleSheetsService, 'get_description_templates', return_value=[{"template_name": "Baptism", "machine": "Aakruthi"}]):
+                flow_json = build_flow_json()
+
+    screen = flow_json["screens"][0]
     form_children = screen["layout"]["children"][0]["children"]
     field_names = [child.get("name") for child in form_children if "name" in child]
 
-    assert "customer_name" in field_names
-    assert "fabric_type" in field_names
-    assert "embroidery_style" in field_names
-    assert "stitch_count" in field_names
-    assert "hours_required" in field_names
+    assert "customer_select" in field_names
+    assert "new_customer_name" in field_names
+    assert "order_type_select" in field_names
+    assert "new_order_type" in field_names
+    assert "template_select" in field_names
+    assert "new_template_name" in field_names
+    assert "quantity" in field_names
     assert "delivery_date" in field_names
+    assert "stitch_count" in field_names
+    assert "labor_hours" in field_names
 
     footer = screen["layout"]["children"][1]
     payload = footer["on-click-action"]["payload"]
-    assert "hours_required" in payload
-    assert payload["hours_required"] == "${form.hours_required}"
+    assert payload["customer_select"] == "${form.customer_select}"
+    assert payload["new_customer_name"] == "${form.new_customer_name}"
+    assert payload["order_type_select"] == "${form.order_type_select}"
+    assert payload["template_select"] == "${form.template_select}"
+    assert payload["quantity"] == "${form.quantity}"
+    assert payload["delivery_date"] == "${form.delivery_date}"
