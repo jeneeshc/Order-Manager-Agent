@@ -31,6 +31,8 @@ class WhatsAppService:
             return False
     def send_flow_message(self, recipient_number: str, flow_id: str, message_text: str = "Please fill out the form below to proceed:"):
         """Sends an interactive WhatsApp Flow message."""
+        import time
+        unique_token = f"CJS_ORDER_{int(time.time())}"
         payload = {
             "messaging_product": "whatsapp",
             "to": recipient_number,
@@ -51,7 +53,7 @@ class WhatsAppService:
                     "name": "flow",
                     "parameters": {
                         "flow_message_version": "3",
-                        "flow_token": "CJS_ORDER_FLOW",
+                        "flow_token": unique_token,
                         "flow_id": flow_id,
                         "flow_cta": "Open Form",
                         "flow_action": "navigate",
