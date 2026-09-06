@@ -31,7 +31,9 @@ class AgentState(BaseModel):
     # Agent 3 updates these: Costing (Strict 4-Factor Formula)
     base_cost_rs: Optional[float] = None
     profit_margin_rs: Optional[float] = None
+    profit_margin_pct: Optional[float] = None
     gst_amount_rs: Optional[float] = None
+    gst_rate_pct: Optional[float] = None
     total_cost_rs: Optional[float] = None
     
     # Agent 4 & 5 updates these: Media & Invoicing

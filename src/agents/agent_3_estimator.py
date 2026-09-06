@@ -1,6 +1,18 @@
 from src.agents.state import AgentState
 from src.services.sheets import GoogleSheetsService
 
+def parse_numeric_rate(val, default: float) -> float:
+    """Safely coerces numeric rates, stripping '%', 'Rs', '₹', commas, and whitespace."""
+    if val is None:
+        return default
+    if isinstance(val, (int, float)):
+        return float(val)
+    try:
+        clean = str(val).replace("%", "").replace("Rs", "").replace("₹", "").replace(",", "").strip()
+        return float(clean)
+    except (ValueError, TypeError):
+        return default
+
 class EstimationAgent:
     def __init__(self):
         self.name = "Estimation Agent"
@@ -21,10 +33,22 @@ class EstimationAgent:
         db = GoogleSheetsService()
         config = db.get_config_variables()
         
-        base_rate = float(config.get("Cost per 1000 Stitches", 10.0))
-        hourly_rate = float(config.get("Hourly Labor Rate", 100.0))
-        profit_margin_pct = float(config.get("Profit Margin Percent", 20.0))
-        gst_rate = float(config.get("GST Rate Percent", 18.0))
+        base_rate = parse_numeric_rate(
+            config.get("Cost per 1000 Stitches") or config.get("Cost per 1000 stitches"),
+            10.0
+        )
+        hourly_rate = parse_numeric_rate(
+            config.get("Hourly Labor Rate") or config.get("Hourly labor rate") or config.get("Labor Rate"),
+            100.0
+        )
+        profit_margin_pct = parse_numeric_rate(
+            config.get("Profit margin") or config.get("Profit Margin Percent") or config.get("Profit Margin") or config.get("Profit margin percent"),
+            20.0
+        )
+        gst_rate = parse_numeric_rate(
+            config.get("GST Rate Percent") or config.get("GST Rate") or config.get("GST") or config.get("GST rate percent"),
+            18.0
+        )
         
         order_type_clean = (state.order_type or "").strip().lower()
         qty = int(state.quantity or 1)
@@ -66,7 +90,9 @@ class EstimationAgent:
         
         state.base_cost_rs = base_cost
         state.profit_margin_rs = profit_amount
+        state.profit_margin_pct = profit_margin_pct
         state.gst_amount_rs = gst_amount
+        state.gst_rate_pct = gst_rate
         state.total_cost_rs = total_cost
         state.invoice_status = "Estimated"
         

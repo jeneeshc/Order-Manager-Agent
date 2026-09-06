@@ -107,3 +107,52 @@ def test_sales_ledger_parsing():
         assert s["customer"] == "Saniya Boutique"
         assert s["gross_total"] == 3041.0
         assert s["gst"] == 441.0
+
+def test_percentage_string_and_profit_margin_alias():
+    """Test that percentage strings ('25%', '18%') and exact key 'Profit margin' are parsed correctly."""
+    mock_values = [
+        ["Variable Name", "Value", "Last Updated"],
+        ["Cost per 1000 Stitches", "10", "2026-09-02"],
+        ["Hourly Labor Rate", "100", "2026-09-02"],
+        ["Profit margin", "25%", "2026-09-02"],
+        ["GST Rate Percent", "18%", "2026-09-02"]
+    ]
+    with patch.object(GoogleSheetsService, '__init__', return_value=None):
+        svc = GoogleSheetsService()
+        svc.spreadsheet_id = "dummy_id"
+        svc.service = MagicMock()
+        mock_get = MagicMock()
+        mock_get.execute.return_value = {"values": mock_values}
+        svc.service.spreadsheets().values().get.return_value = mock_get
+        GoogleSheetsService._config_cache = None
+        
+        config = svc.get_config_variables(force_refresh=True)
+        assert config["Profit margin"] == 25
+        assert config["Profit Margin Percent"] == 25
+        assert config["GST Rate Percent"] == 18
+        
+        with patch.object(GoogleSheetsService, 'get_config_variables', return_value=config):
+            agent = EstimationAgent()
+            state = AgentState(
+                customer_name="Saniya Boutique",
+                order_type="Machine Embroidery",
+                template_name="Saree Border",
+                stitch_count=15000,
+                quantity=2,
+                labor_hours=2.5
+            )
+            res = agent.process(state)
+            
+            # Stitches: (15000 * 2 / 1000) * 10 = Rs 300.0
+            # Labor: 2.5 * 100 = Rs 250.0
+            # Base Cost: Rs 550.0
+            # Profit Margin (25%): 550 * 0.25 = Rs 137.5
+            # Subtotal: 550 + 137.5 = Rs 687.5
+            # GST (18%): 687.5 * 0.18 = Rs 123.75
+            # Total Cost: 687.5 + 123.75 = Rs 811.25
+            assert res.base_cost_rs == 550.0
+            assert res.profit_margin_pct == 25.0
+            assert res.profit_margin_rs == 137.5
+            assert res.gst_rate_pct == 18.0
+            assert res.gst_amount_rs == 123.75
+            assert res.total_cost_rs == 811.25

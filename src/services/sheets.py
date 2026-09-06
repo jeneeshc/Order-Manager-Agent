@@ -985,7 +985,7 @@ class GoogleSheetsService:
     # (Maintains 100% strict column invariance for CJS Accountant)
     # -------------------------------------------------------------------------
 
-    def get_config_variables(self) -> dict:
+    def get_config_variables(self, force_refresh: bool = False) -> dict:
         """
         Fetches system variables from the 'Config' tab (Col A=Variable Name, Col B=Value, Col C=Last Updated).
         Returns a dictionary mapping Variable Name -> Value (coerced to float/int if numeric, else string).
@@ -993,7 +993,7 @@ class GoogleSheetsService:
         """
         import time
         now = time.time()
-        if GoogleSheetsService._config_cache and (now - GoogleSheetsService._config_cache_time) < 120:
+        if not force_refresh and GoogleSheetsService._config_cache and (now - GoogleSheetsService._config_cache_time) < 120:
             return GoogleSheetsService._config_cache
 
         config = {}
@@ -1009,13 +1009,50 @@ class GoogleSheetsService:
                 var_name = str(row[0]).strip()
                 var_val_str = str(row[1]).strip()
                 try:
-                    var_val = float(var_val_str)
+                    clean_str = var_val_str.replace("%", "").replace("Rs", "").replace("₹", "").replace(",", "").strip()
+                    var_val = float(clean_str)
                     if var_val.is_integer():
                         var_val = int(var_val)
                 except ValueError:
                     var_val = var_val_str
                 config[var_name] = var_val
-            print(f"[SheetsAPI] Loaded {len(config)} variables from 'Config' tab.")
+
+            # Populate canonical key aliases so lookups succeed regardless of exact naming in sheet
+            # 1. Profit Margin aliases
+            for pm_key in ["Profit Margin Percent", "Profit margin", "Profit Margin", "Profit margin percent", "Profit Margin %"]:
+                if pm_key in config:
+                    val = config[pm_key]
+                    config["Profit Margin Percent"] = val
+                    config["Profit margin"] = val
+                    config["Profit Margin"] = val
+                    break
+
+            # 2. GST Rate aliases
+            for gst_key in ["GST Rate Percent", "GST Rate", "GST", "GST rate percent", "GST Percent", "GST Rate %"]:
+                if gst_key in config:
+                    val = config[gst_key]
+                    config["GST Rate Percent"] = val
+                    config["GST Rate"] = val
+                    config["GST"] = val
+                    break
+
+            # 3. Cost per 1000 Stitches aliases
+            for st_key in ["Cost per 1000 Stitches", "Cost per 1000 stitches", "Cost Per 1000 Stitches"]:
+                if st_key in config:
+                    val = config[st_key]
+                    config["Cost per 1000 Stitches"] = val
+                    config["Cost per 1000 stitches"] = val
+                    break
+
+            # 4. Hourly Labor Rate aliases
+            for lb_key in ["Hourly Labor Rate", "Hourly labor rate", "Labor Rate"]:
+                if lb_key in config:
+                    val = config[lb_key]
+                    config["Hourly Labor Rate"] = val
+                    config["Hourly labor rate"] = val
+                    break
+
+            print(f"[SheetsAPI] Loaded {len(config)} variables from 'Config' tab (including normalized aliases).")
             GoogleSheetsService._config_cache = config
             GoogleSheetsService._config_cache_time = now
             return config
