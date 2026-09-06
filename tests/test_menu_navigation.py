@@ -228,12 +228,19 @@ def test_cost_override_flow(mock_sheets_service):
     assert "Cost Updated!" in result3.final_reply
 
 def test_direct_code_31_pending_invoicing(mock_sheets_service):
+    mock_sheets_service.get_orders_pending_invoicing.return_value = {
+        "Priya": [{"order_id": "CJS-101", "cost": "Rs 1,500.0"}],
+        "Ammu": [{"order_id": "CJS-102", "cost": "Rs 2,000"}, {"order_id": "CJS-103", "cost": "Rs 500"}]
+    }
     collector = OrderCollectorAgent()
     state = AgentState(raw_message="31")
     result = collector.process(state)
     
     assert result.is_pending_invoicing_query is True
     assert result.active_menu is None
+    assert "Pending Invoices" in result.final_reply
+    assert "• *Ammu* — Rs 2,500" in result.final_reply
+    assert "• *Priya* — Rs 1,500" in result.final_reply
 
 def test_direct_code_34_debtors(mock_sheets_service):
     collector = OrderCollectorAgent()

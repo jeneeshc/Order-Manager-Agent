@@ -261,12 +261,17 @@ class CJSSingleAgent:
             if not pending:
                 state.final_reply = "Boss, all completed orders have been invoiced! No pending orders. 🎉"
             else:
-                lines = ["📋 *Orders Pending Invoicing Report*\n"]
-                for cname, ords in pending.items():
-                    lines.append(f"👤 *{cname}* ({len(ords)} orders):")
+                lines = ["📋 *Pending Invoices*\n"]
+                for cname, ords in sorted(pending.items()):
+                    total_amount = 0.0
                     for o in ords:
-                        lines.append(f"  • *{o['order_id']}* — {o.get('template', 'Order')} | Due: {o.get('completion_date', '')} | Cost: {o.get('cost', '')}")
-                lines.append("\nReply *32* to mark an order as invoiced, or reply with customer name to update.")
+                        cost_str = str(o.get("cost", "0")).replace("Rs", "").replace("₹", "").replace(",", "").strip()
+                        try:
+                            total_amount += float(cost_str)
+                        except ValueError:
+                            pass
+                    amt_display = f"Rs {int(total_amount):,}" if total_amount.is_integer() else f"Rs {total_amount:,.2f}"
+                    lines.append(f"• *{cname}* — {amt_display}")
                 state.final_reply = "\n".join(lines)
             return state
 

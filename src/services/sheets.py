@@ -939,7 +939,7 @@ class GoogleSheetsService:
 
     def get_orders_pending_invoicing(self) -> dict:
         """
-        Scans all orders and returns those with status not in ('invoiced', 'completed'),
+        Scans all orders and returns those with status not in ('invoiced', 'completed', 'complete', 'paid', 'cancelled'),
         grouped by Customer Name.
         Returns a dict: {"Customer Name": [order_dict, ...]}
         """
@@ -954,17 +954,32 @@ class GoogleSheetsService:
             for i, row in enumerate(rows):
                 if i == 0: continue # skip header
                 if len(row) < 2: continue
-                
-                status = str(row[13]).strip().lower() if len(row) > 13 else (str(row[10]).strip().lower() if len(row) > 10 else "")
-                if status in ("invoiced", "completed"): continue
-                
                 order_id = str(row[1]).strip()
-                cid = str(row[2]).strip() if len(row) > 2 else "Unknown"
-                cname = str(row[3]).strip() if len(row) > 3 and str(row[3]).strip() else customer_map.get(cid, cid)
-                order_type = str(row[5]).strip() if len(row) > 5 else "Machine Embroidery"
-                template_name = str(row[6]).strip() if len(row) > 6 else (str(row[5]).strip() if len(row) > 5 else "General")
-                cost = str(row[12]).strip() if len(row) > 12 else (str(row[9]).strip() if len(row) > 9 else "Rs 0")
-                completion_date = str(row[11]).strip() if len(row) > 11 else (str(row[8]).strip() if len(row) > 8 else "Unknown")
+                if not order_id or order_id.lower() in ("order id", "id"): continue
+                
+                status_col_k = str(row[10]).strip().lower() if len(row) > 10 else ""
+                status_col_n = str(row[13]).strip().lower() if len(row) > 13 else ""
+                is_new_schema = status_col_k in ("ricoma", "aakruthi", "none") or status_col_n in ("estimated", "pending", "invoiced", "completed", "paid", "cancelled")
+                
+                if is_new_schema:
+                    status = status_col_n
+                    cid = str(row[2]).strip() if len(row) > 2 else "Unknown"
+                    cname = str(row[3]).strip() if len(row) > 3 and str(row[3]).strip() else customer_map.get(cid, "Unknown")
+                    order_type = str(row[5]).strip() if len(row) > 5 else "Machine Embroidery"
+                    template_name = str(row[6]).strip() if len(row) > 6 else "General"
+                    cost = str(row[12]).strip() if len(row) > 12 else "Rs 0"
+                    completion_date = str(row[11]).strip() if len(row) > 11 else ""
+                else:
+                    status = status_col_k
+                    cid = str(row[2]).strip() if len(row) > 2 else "Unknown"
+                    cname = customer_map.get(cid, cid) if len(row) > 2 else "Unknown"
+                    order_type = "Machine Embroidery"
+                    template_name = str(row[5]).strip() if len(row) > 5 else "General"
+                    cost = str(row[9]).strip() if len(row) > 9 else "Rs 0"
+                    completion_date = str(row[8]).strip() if len(row) > 8 else ""
+                
+                if status in ("invoiced", "completed", "complete", "paid", "cancelled"):
+                    continue
                 
                 order = {
                     "order_id": order_id,
