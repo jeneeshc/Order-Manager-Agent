@@ -42,7 +42,7 @@ class InvoicingAgent:
                         customer_total += val
                         grand_total += val
                         
-                        desc = f"{o['fabric_type']} - {o['embroidery_type']}"
+                        desc = o.get('template') or f"{o.get('fabric_type', '')} - {o.get('embroidery_type', '')}".strip("- ") or "General"
                         table_rows.append([o['order_id'], desc, f"Rs {val:.2f}"])
                     
                     headers = ["Order ID", "Details", "Est. Cost"]

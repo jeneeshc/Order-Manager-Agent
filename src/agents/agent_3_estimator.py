@@ -7,50 +7,81 @@ class EstimationAgent:
 
     def process(self, state: AgentState) -> AgentState:
         """
-        Agent 3 Logic:
-        - Re-confirm stitch count natively.
-        - Dynamically fetch 'Cost per 1000 Stitches', 'Hourly Labor Rate', and 'GST Rate Percent' from Config tab.
-        - Calculate:
-            stitch_cost = (stitch_count / 1000) * cost_per_1000_stitches
-            labor_cost = labor_hours * hourly_labor_rate
-            base_cost = stitch_cost + labor_cost
-            gst_amount = base_cost * (gst_rate_percent / 100)
-            total_cost = base_cost + gst_amount
+        Agent 3 Strict 4-Factor Pricing Logic:
+        1. Stitching Cost: (stitch_count * quantity / 1000) * base_rate (0 for Embroidery design)
+        2. Labor Cost: labor_hours * hourly_labor_rate
+        3. Base Production Cost: Stitching Cost + Labor Cost
+        4. Profit Margin: Base Cost * (profit_margin_pct / 100)
+        5. Subtotal: Base Cost + Profit Margin
+        6. GST: Subtotal * (gst_rate_pct / 100)
+        7. Total Order Cost: Subtotal + GST
         """
-        if not state.stitch_count: return state
-            
-        print(f"[{self.name}] Connecting to Database to retrieve rates from Config tab...")
+        print(f"[{self.name}] Connecting to Database to retrieve pricing rates from Config tab...")
         
         db = GoogleSheetsService()
         config = db.get_config_variables()
+        
         base_rate = float(config.get("Cost per 1000 Stitches", 10.0))
         hourly_rate = float(config.get("Hourly Labor Rate", 100.0))
+        profit_margin_pct = float(config.get("Profit Margin Percent", 20.0))
         gst_rate = float(config.get("GST Rate Percent", 18.0))
         
-        stitch_cost = round((state.stitch_count / 1000.0) * base_rate, 2)
-        labor_hours = float(state.labor_hours or 0.0)
-        labor_cost = round(labor_hours * hourly_rate, 2)
+        order_type_clean = (state.order_type or "").strip().lower()
+        qty = int(state.quantity or 1)
         
+        # 1. Stitching Cost
+        if order_type_clean == "embroidery design":
+            stitch_cost = 0.0
+            stitches_display = "0 (Software Design)"
+        else:
+            stitches = int(state.stitch_count or 0)
+            stitch_cost = round(((stitches * qty) / 1000.0) * base_rate, 2)
+            stitches_display = f"{stitches} st x {qty} qty / 1000 x Rs {base_rate}"
+
+        # 2. Labor Cost
+        labor_hours = float(state.labor_hours or 0.0)
+        # If labor hours not set, attempt template pre-population
+        if labor_hours <= 0 and state.template_name:
+            tmpl = db.get_template_by_name(state.template_name)
+            if tmpl and tmpl.get("default_labor_hours"):
+                labor_hours = float(tmpl["default_labor_hours"])
+                state.labor_hours = labor_hours
+
+        labor_cost = round(labor_hours * hourly_rate, 2)
+
+        # 3. Base Production Cost
         base_cost = round(stitch_cost + labor_cost, 2)
-        gst_amount = round(base_cost * (gst_rate / 100.0), 2)
-        total_cost = round(base_cost + gst_amount, 2)
+
+        # 4. Profit Margin
+        profit_amount = round(base_cost * (profit_margin_pct / 100.0), 2)
+
+        # 5. Subtotal (Net Price)
+        subtotal = round(base_cost + profit_amount, 2)
+
+        # 6. GST
+        gst_amount = round(subtotal * (gst_rate / 100.0), 2)
+
+        # 7. Total Cost
+        total_cost = round(subtotal + gst_amount, 2)
         
         state.base_cost_rs = base_cost
+        state.profit_margin_rs = profit_amount
         state.gst_amount_rs = gst_amount
         state.total_cost_rs = total_cost
-        
-        estimator_log = (
-            f"\n[Estimator Agent]: Calculated cost using Config parameters:\n"
-            f"• Stitching: {state.stitch_count} stitches / 1000 x Rs {base_rate} = Rs {stitch_cost}\n"
-            f"• Labor: {labor_hours} hrs x Rs {hourly_rate}/hr = Rs {labor_cost}\n"
-            f"• Subtotal: Rs {base_cost}\n"
-            f"• GST ({gst_rate}%): Rs {gst_amount}\n"
-            f"• Total Order Cost: Rs {total_cost}. Payment status set to 'Estimated'.\n"
-        )
-             
-        state.aggregated_reasoning += estimator_log
         state.invoice_status = "Estimated"
         
-        print(f"[{self.name}] Final Calculated Cost: Rs {state.total_cost_rs} (Stitches: Rs {stitch_cost}, Labor: Rs {labor_cost}, GST: Rs {gst_amount})")
+        estimator_log = (
+            f"\n[Estimator Agent]: Strict 4-Factor Cost Breakdown:\n"
+            f"• Stitching Cost: {stitches_display} = Rs {stitch_cost}\n"
+            f"• Labor Cost: {labor_hours} hrs x Rs {hourly_rate}/hr = Rs {labor_cost}\n"
+            f"• Base Production Cost: Rs {base_cost}\n"
+            f"• Profit Margin ({profit_margin_pct}%): Rs {profit_amount}\n"
+            f"• Subtotal: Rs {subtotal}\n"
+            f"• GST ({gst_rate}%): Rs {gst_amount}\n"
+            f"• Total Order Cost: Rs {total_cost}. Status set to 'Estimated'.\n"
+        )
+             
+        state.aggregated_reasoning = (state.aggregated_reasoning or "") + estimator_log
         
+        print(f"[{self.name}] Cost Calculated: Rs {state.total_cost_rs} (Stitch: Rs {stitch_cost}, Labor: Rs {labor_cost}, Margin: Rs {profit_amount}, GST: Rs {gst_amount})")
         return state

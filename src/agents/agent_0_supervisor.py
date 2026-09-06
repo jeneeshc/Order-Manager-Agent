@@ -38,9 +38,10 @@ class SupervisorAgent:
         
         CURRENT STATE:
         - Customer: {state.customer_name or 'Unknown'}
-        - Fabric: {state.fabric_type or 'Unknown'}
-        - Embroidery: {state.embroidery_type or 'Unknown'}
-        - Stitches: {state.stitch_count or 'Unknown'}
+        - Order Type: {state.order_type or state.fabric_type or 'Unknown'}
+        - Template Name: {state.template_name or state.embroidery_type or 'Unknown'}
+        - Quantity: {state.quantity or 1}
+        - Stitches: {state.stitch_count if state.stitch_count is not None else ('N/A (Design)' if state.order_type == 'Embroidery design' else 'Unknown')}
         - Order ID: {state.order_id or 'New Order'}
         - Est. Completion: {state.estimated_completion_date or 'Unknown'}
         - Missing Info? {state.is_missing_info}
@@ -49,17 +50,17 @@ class SupervisorAgent:
         - Final Reply Ready? {'Yes' if state.final_reply else 'No'}
         
         WORKERS AVAILABLE:
-        - 'collector': Specialized in extracting names, fabrics, stitches, and detecting intents. Use this if order info is missing or first contact.
+        - 'collector': Specialized in extracting customer names, order types, templates, stitches, and detecting intents. Use this if order info is missing or first contact.
         - 'secretary': Specialized in daily task summaries, business briefings, and reminders.
         - 'scheduler': Calculates production dates using machine queues and holidays.
-        - 'estimator': Calculates costs and machine assignments.
+        - 'estimator': Calculates costs based on stitches, labor hours, profit margin, and GST.
         - 'social': Prepares media assets and design mockups.
         - 'invoice': Handles payment status, pending dues, report of orders pending for invoicing, and bulk invoicing updates.
         
         DECISION RULES:
         1. CRITICAL: If 'Missing Info? True' (is_missing_info), you MUST route to 'END' immediately. This allows the system to send the missing information prompt to Siny. Do NOT route to collector again if information is already flagged as missing.
-        2. If 'Missing Info? False' AND this is an order request AND ANY of Customer, Fabric, Embroidery, or Stitches is 'Unknown', you MUST route to 'collector' to extract the remaining information.
-        3. If all required order info is present (Customer, Fabric, Embroidery, Stitches are NOT 'Unknown') and scheduling hasn't been done (Est. Completion is 'Unknown'), route to 'scheduler'.
+        2. If 'Missing Info? False' AND this is an order request AND ANY of Customer, Order Type, or Template Name is 'Unknown', you MUST route to 'collector' to extract the remaining information.
+        3. If all required order info is present (Customer, Order Type, and Template Name are NOT 'Unknown') and scheduling hasn't been done (Est. Completion is 'Unknown'), route to 'scheduler'.
         4. If scheduling is done but costs aren't calculated, route to 'estimator'.
         5. If Siny asks for a daily summary, work schedule, or "what to do today", route to 'secretary'.
         6. If Siny asks for details of orders pending for invoicing, or states that invoicing is done (for a customer or all customers), route to 'invoice'.
@@ -116,12 +117,10 @@ class SupervisorAgent:
             missing_fields = []
             if not state.customer_name or state.customer_name.strip().lower() in {"unknown", "none", ""}:
                 missing_fields.append("customer name")
-            if not state.fabric_type or state.fabric_type.strip().lower() in {"unknown", "none", ""}:
-                missing_fields.append("fabric type")
-            if not state.embroidery_type or state.embroidery_type.strip().lower() in {"unknown", "none", ""}:
-                missing_fields.append("embroidery style")
-            if not state.stitch_count or (isinstance(state.stitch_count, int) and state.stitch_count <= 0):
-                missing_fields.append("stitch count")
+            if not state.order_type and not state.fabric_type:
+                missing_fields.append("order type")
+            if not state.template_name and not state.embroidery_type:
+                missing_fields.append("template name")
                 
             if missing_fields:
                 print(f"[{self.name}] Guardrail Triggered! Missing mandatory fields: {missing_fields}. Overriding next_step to 'collector'.")

@@ -8,11 +8,13 @@ from src.services.sheets import GoogleSheetsService
 class OrderExtractionModel(BaseModel):
     """Structured extraction of order details from WhatsApp messages."""
     customer_name: Optional[str] = Field(None, description="Customer name.")
-    fabric_type: Optional[str] = Field(None, description="Material/fabric type.")
-    embroidery_type: Optional[str] = Field(None, description="Embroidery style/type. Do NOT include garment type (e.g., Kurty).")
-    stitch_count: Optional[int] = Field(None, description="Total stitch count (numeric).")
+    order_type: Optional[str] = Field(None, description="Order type: 'Machine Embroidery' or 'Embroidery design'.")
+    template_name: Optional[str] = Field(None, description="Template name (e.g. Saree Border, Kurti Neck, Logo, Baptism, Vector Digitizing).")
+    fabric_type: Optional[str] = Field(None, description="Legacy fabric/material type if mentioned.")
+    embroidery_type: Optional[str] = Field(None, description="Legacy embroidery style if mentioned.")
+    stitch_count: Optional[int] = Field(None, description="Total stitch count (numeric, not needed for Embroidery design).")
     labor_hours: Optional[float] = Field(None, description="Labor hours or hours required to complete the work (numeric).")
-    quantity: Optional[int] = Field(None, description="Total number of items (numeric).")
+    quantity: Optional[int] = Field(1, description="Total number of items (numeric, default 1).")
     requested_delivery_date: Optional[str] = Field(None, description="Delivery date/day.")
     referenced_order_id: Optional[str] = Field(None, description="Existing Order ID (e.g., CJS-12345) mentioned.")
     mark_as_invoiced: bool = Field(False, description="True if asked to mark order as invoiced.")
@@ -41,7 +43,7 @@ def sanitize_customer_name(name: Optional[str]) -> Optional[str]:
 MAIN_MENU_TEXT = (
     "🧵 *CJS Designs — Order Manager* 🧵\n"
     "Hello Boss! How can I assist you today? Please reply with a number:\n\n"
-    "1️⃣ *New Order Form* (Form with Fabric & Style dropdowns)\n"
+    "1️⃣ *New Order Form* (Customer, Order Type & Template dropdowns)\n"
     "2️⃣ *Adjust Existing Order* (Change Date, Machine, Cost, or Reasoning)\n"
     "3️⃣ *Invoicing & Billing* (Pending Invoices, Mark Invoiced/Paid, Debtors)\n"
     "4️⃣ *Daily Briefing & Tasks* (Today's summary, queues, and reminders)\n"
@@ -569,13 +571,19 @@ class OrderCollectorAgent:
             state.customer_id = None
 
         # Safely hydrate state if AI explicitly extracted something NEW
-        if extraction.fabric_type and not extraction.referenced_order_id:
+        if extraction.order_type:
+            state.order_type = extraction.order_type
+        if extraction.template_name:
+            state.template_name = extraction.template_name
+        if extraction.fabric_type:
             state.fabric_type = extraction.fabric_type
-        elif extraction.fabric_type and extraction.referenced_order_id:
-            pass
-        if extraction.embroidery_type and not extraction.referenced_order_id:
+            if not state.order_type:
+                state.order_type = "Machine Embroidery"
+        if extraction.embroidery_type:
             state.embroidery_type = extraction.embroidery_type
-        if extraction.stitch_count and not extraction.referenced_order_id:
+            if not state.template_name:
+                state.template_name = extraction.embroidery_type
+        if extraction.stitch_count is not None:
             state.stitch_count = extraction.stitch_count
 
         if extraction.requested_delivery_date:
@@ -586,40 +594,39 @@ class OrderCollectorAgent:
             
         if extraction.labor_hours is not None:
             state.labor_hours = extraction.labor_hours
+        elif state.template_name and not state.labor_hours:
+            # Pre-populate default labor hours from Description_Templates
+            db = GoogleSheetsService()
+            tmpl = db.get_template_by_name(state.template_name)
+            if tmpl and tmpl.get("default_labor_hours"):
+                state.labor_hours = float(tmpl["default_labor_hours"])
 
         if extraction.confirm_duplicate:
             state.is_duplicate_confirmed = True
 
-        # Decision Logic: requires Customer Name, Fabric, Embroidery Type, and Stitch Count
-        if not state.customer_name or not state.fabric_type or not state.embroidery_type or not state.stitch_count:
-            print(f"[{self.name}] Required parameters missing. Returning to WhatsApp.")
+        # Decision Logic: requires Customer Name, Order Type, and Template Name
+        missing_items = []
+        if not state.customer_name: missing_items.append("customer name")
+        if not state.order_type and not state.fabric_type: missing_items.append("order type")
+        if not state.template_name and not state.embroidery_type: missing_items.append("template name")
+
+        if missing_items:
+            print(f"[{self.name}] Required parameters missing: {missing_items}. Returning to WhatsApp.")
             state.is_missing_info = True
             
-            missing_items = []
-            if not state.customer_name: missing_items.append("customer name")
-            if not state.fabric_type: missing_items.append("fabric type")
-            if not state.embroidery_type: missing_items.append("embroidery style")
-            if not state.stitch_count: missing_items.append("stitch count")
-            
-            if len(missing_items) == 4:
-                print(f"[{self.name}] All parameters missing. Triggering native WhatsApp Flow Form.")
+            if len(missing_items) >= 2:
+                print(f"[{self.name}] Multiple parameters missing. Triggering native WhatsApp Flow Form.")
                 state.send_order_form = True
-                state.missing_fields_prompt = "Triggering form..."
+                state.missing_fields_prompt = "Triggering order form..."
             else:
-                if len(missing_items) == 1:
-                    missing_str = missing_items[0]
-                elif len(missing_items) == 2:
-                    missing_str = f"{missing_items[0]} and {missing_items[1]}"
-                else:
-                    missing_str = ", ".join(missing_items[:-1]) + f", and {missing_items[-1]}"
-                
+                missing_str = missing_items[0]
                 state.missing_fields_prompt = f"Please provide the {missing_str} to complete the order."
         else:
-            # We have all info — check for duplicates!
+            # We have all required info — check for duplicates!
             if not state.is_duplicate_confirmed and not extraction.referenced_order_id:
                 db = GoogleSheetsService()
                 similar_order = db.find_similar_order(
-                    state.customer_id or state.customer_name, state.fabric_type, state.embroidery_type, state.stitch_count
+                    state.customer_id or state.customer_name, state.fabric_type or state.order_type, state.embroidery_type or state.template_name, state.stitch_count or 0
                 )
                 if similar_order:
                     print(f"[{self.name}] Similar order detected! Prompting Boss for update vs create new choice.")
@@ -627,18 +634,17 @@ class OrderCollectorAgent:
                     o_id = similar_order.get("order_id", "Unknown")
                     o_date = similar_order.get("date", "recently")
                     o_stitch = similar_order.get("stitches", state.stitch_count)
-                    o_style = similar_order.get("style", state.embroidery_type)
-                    o_fabric = similar_order.get("fabric", state.fabric_type)
+                    o_style = similar_order.get("style", state.template_name or state.embroidery_type)
                     
-                    state.missing_fields_prompt = f"I found a ~90% similar order for {state.customer_name} from {o_date}: Order *{o_id}* ({o_stitch} stitches of {o_style} on {o_fabric}).\n\nWould you like to update this existing order (reply *'update {o_id}'*), or create a brand new one (reply *'create new'*)"
+                    state.missing_fields_prompt = f"I found a ~90% similar order for {state.customer_name} from {o_date}: Order *{o_id}* ({o_stitch} stitches of {o_style}).\n\nWould you like to update this existing order (reply *'update {o_id}'*), or create a brand new one (reply *'create new'*)"
                     return state
 
             # Passes all checks
             state.is_missing_info = False
 
-        # Write Agent 1 Log to Column L (reasoning)
-        agent_log = f"\n[Collector Agent]: Customer='{state.customer_name}', Stitches={state.stitch_count}, Fabric={state.fabric_type}, Style={state.embroidery_type}.\n"
+        # Write Agent 1 Log to Column O (reasoning)
+        agent_log = f"\n[Collector Agent]: Customer='{state.customer_name}', Order Type='{state.order_type}', Template='{state.template_name}', Qty={state.quantity}, Stitches={state.stitch_count}, LaborHrs={state.labor_hours}.\n"
         state.aggregated_reasoning = (state.aggregated_reasoning or "") + agent_log
 
-        print(f"[{self.name}] Aggregated Extraction Output -> Customer: {state.customer_name}, Stitches: {state.stitch_count}, Fabric: {state.fabric_type}, Style: {state.embroidery_type}")
+        print(f"[{self.name}] Aggregated Extraction Output -> Customer: {state.customer_name}, Order Type: {state.order_type}, Template: {state.template_name}, Qty: {state.quantity}, Stitches: {state.stitch_count}")
         return state

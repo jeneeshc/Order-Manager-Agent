@@ -78,9 +78,9 @@ async def root():
 async def health():
     return {"status": "healthy", "timestamp": "2026-03-30", "version": VERSION}
 
-@app.get("/trigger-daily-brief")
+@app.api_route("/trigger-daily-brief", methods=["GET", "POST"])
 async def trigger_daily_brief():
-    """Manual / Cloud Scheduler endpoint to trigger the morning brief."""
+    """Manual / GCP Cloud Scheduler endpoint to trigger the morning brief."""
     await send_daily_briefing()
     return {"status": "sent", "recipient": ADMIN_PHONE_NUMBER}
 
@@ -143,34 +143,76 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                 initial_state = AgentState(raw_message=text_body, sender_id=sender_phone)
             
             # 1.5 Handle Form Submission Bypass
+            # 1.5 Handle Form Submission Bypass
             if interactive_payload:
-                raw_cust_name = interactive_payload.get("customer_name")
+                raw_cust_name = interactive_payload.get("new_customer_name") or interactive_payload.get("customer_name")
                 from src.agents.agent_1_collector import sanitize_customer_name
                 sanitized_cust_name = sanitize_customer_name(raw_cust_name)
                 
                 initial_state.customer_name = sanitized_cust_name
                 if sanitized_cust_name:
-                    cid = db_service.create_customer_if_not_exists(sanitized_cust_name)
+                    cid = db_service.create_customer_if_not_exists(sanitized_cust_name, phone=sender_phone)
                     initial_state.customer_id = cid
                 else:
                     initial_state.customer_id = None
                     initial_state.is_missing_info = True
                     initial_state.missing_fields_prompt = "Please provide a valid customer name to complete the order."
                 
-                initial_state.fabric_type = interactive_payload.get("fabric_type")
-                # Combine garment type into embroidery type to match existing state logic
-                garment = interactive_payload.get("garment_type", "")
-                embroidery = interactive_payload.get("embroidery_style", "")
-                initial_state.embroidery_type = f"{embroidery} {garment}".strip()
-                initial_state.stitch_count = int(interactive_payload.get("stitch_count", 0))
-                raw_labor = interactive_payload.get("hours_required") or interactive_payload.get("labor_hours") or 0.0
+                # Order Type & Template Name
+                raw_order_type = interactive_payload.get("new_order_type") or interactive_payload.get("order_type") or "Machine Embroidery"
+                raw_template = (
+                    interactive_payload.get("new_template_name")
+                    or interactive_payload.get("template_name")
+                    or interactive_payload.get("embroidery_style")
+                    or "General"
+                )
+                initial_state.order_type = str(raw_order_type).strip()
+                initial_state.template_name = str(raw_template).strip()
+                
+                # Maintain legacy fields for compatibility
+                initial_state.fabric_type = str(interactive_payload.get("fabric_type") or initial_state.order_type)
+                initial_state.embroidery_type = initial_state.template_name
+                
+                # Quantity
                 try:
-                    initial_state.labor_hours = float(raw_labor)
+                    initial_state.quantity = int(interactive_payload.get("quantity") or 1)
                 except (ValueError, TypeError):
+                    initial_state.quantity = 1
+
+                # Labor Hours
+                raw_labor = interactive_payload.get("hours_required") or interactive_payload.get("labor_hours")
+                if raw_labor is not None:
+                    try:
+                        initial_state.labor_hours = float(raw_labor)
+                    except (ValueError, TypeError):
+                        initial_state.labor_hours = 0.0
+                else:
                     initial_state.labor_hours = 0.0
-                initial_state.requested_delivery_date = str(interactive_payload.get("delivery_date"))
+
+                # Auto-register new template if not already present in Description_Templates
+                db_service.create_template_if_not_exists(
+                    order_type=initial_state.order_type,
+                    template_name=initial_state.template_name,
+                    default_labor_hours=initial_state.labor_hours or 1.0
+                )
+
+                # Stitch Count
+                if initial_state.order_type.lower() == "embroidery design":
+                    initial_state.stitch_count = 0
+                else:
+                    raw_stitches = interactive_payload.get("stitch_count")
+                    if raw_stitches is not None and str(raw_stitches).isdigit():
+                        initial_state.stitch_count = int(raw_stitches)
+                    else:
+                        initial_state.stitch_count = 0
+                
+                initial_state.requested_delivery_date = str(
+                    interactive_payload.get("delivery_date")
+                    or interactive_payload.get("expected_delivery_date")
+                    or ""
+                )
                 initial_state.raw_message = "I have filled out the order form."
-                print(f"[WEBHOOK] Injected native Flow data into state for {sender_phone} (Stitches: {initial_state.stitch_count}, Hours: {initial_state.labor_hours})")
+                print(f"[WEBHOOK] Injected native Flow data into state for {sender_phone} (Type: {initial_state.order_type}, Template: {initial_state.template_name}, Stitches: {initial_state.stitch_count}, Hours: {initial_state.labor_hours})")
             
             # 2. Execute the LangGraph chain (with Guard Rails)
             final_state_dict = cjs_bot.invoke(initial_state, config={"recursion_limit": 20})

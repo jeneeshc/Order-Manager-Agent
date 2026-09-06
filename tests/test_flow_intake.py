@@ -44,6 +44,7 @@ def test_flow_payload_injection_and_costing():
     mock_config = {
         "Cost per 1000 Stitches": 10.0,
         "Hourly Labor Rate": 100.0,
+        "Profit Margin Percent": 20.0,
         "GST Rate Percent": 18.0
     }
 
@@ -54,16 +55,17 @@ def test_flow_payload_injection_and_costing():
 
             # Stitches: (45000 / 1000) * 10 = Rs 450.0
             # Labor: 2.5 * 100 = Rs 250.0
-            # Subtotal: Rs 700.0
-            # GST: 700.0 * 0.18 = Rs 126.0
-            # Total Cost: Rs 826.0
+            # Base Cost: Rs 700.0
+            # Profit Margin (20%): Rs 140.0
+            # Subtotal: Rs 840.0
+            # GST (18%): 840.0 * 0.18 = Rs 151.2
+            # Total Cost: Rs 991.2
             assert res.base_cost_rs == 700.0
-            assert res.gst_amount_rs == 126.0
-            assert res.total_cost_rs == 826.0
+            assert res.profit_margin_rs == 140.0
+            assert res.gst_amount_rs == 151.2
+            assert res.total_cost_rs == 991.2
             assert res.invoice_status == "Estimated"
-            assert "Stitching: 45000 stitches / 1000 x Rs 10.0 = Rs 450.0" in res.aggregated_reasoning
-            assert "Labor: 2.5 hrs x Rs 100.0/hr = Rs 250.0" in res.aggregated_reasoning
-            assert "GST (18.0%): Rs 126.0" in res.aggregated_reasoning
+            assert "Strict 4-Factor Cost Breakdown" in res.aggregated_reasoning
 
 def test_flow_json_structure():
     """Verify that deploy_flow.py's FLOW_JSON has hours_required and correct types."""

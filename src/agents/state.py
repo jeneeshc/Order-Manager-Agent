@@ -13,21 +13,24 @@ class AgentState(BaseModel):
     # Agent 1 updates these: Order context
     customer_name: Optional[str] = None
     customer_id: Optional[str] = None
-    fabric_type: Optional[str] = None
-    embroidery_type: Optional[str] = None
+    order_type: Optional[str] = None       # "Machine Embroidery" or "Embroidery design"
+    template_name: Optional[str] = None    # e.g. "Saree Border", "Logo", etc.
+    fabric_type: Optional[str] = None      # Legacy fallback
+    embroidery_type: Optional[str] = None  # Legacy fallback
     stitch_count: Optional[int] = None
-    quantity: Optional[int] = None
-    labor_hours: Optional[float] = None
+    quantity: Optional[int] = Field(default=1)
+    labor_hours: Optional[float] = Field(default=0.0)
     requested_delivery_date: Optional[str] = None
     order_id: Optional[str] = None
     
     # Agent 2 updates these: Scheduling
     estimated_completion_date: Optional[str] = None
-    machine_assigned: Optional[str] = None  # Ricoma or Aakruthi
+    machine_assigned: Optional[str] = None  # Ricoma, Aakruthi, or None
     aggregated_reasoning: str = Field(default="")
     
-    # Agent 3 updates these: Costing
+    # Agent 3 updates these: Costing (Strict 4-Factor Formula)
     base_cost_rs: Optional[float] = None
+    profit_margin_rs: Optional[float] = None
     gst_amount_rs: Optional[float] = None
     total_cost_rs: Optional[float] = None
     
