@@ -247,14 +247,14 @@ class OrderCollectorAgent:
             state.active_menu = None
             return state
 
-        # 0.4 Handling Main Menu numeric choices
-        if state.active_menu == "MAIN":
-            if raw_msg == "1":
+        # 0.4 Handling Main Menu numeric choices & direct intents
+        if state.active_menu == "MAIN" or (not state.active_menu and raw_msg in {"1", "2", "3", "4", "5"}) or msg_lower in {"new order", "create order", "order form", "open form"}:
+            if raw_msg == "1" or msg_lower in {"1", "new order", "create order", "order form", "open form"}:
                 state.send_order_form = True
                 state.active_menu = None
                 state.final_reply = (
                     "Opening WhatsApp Order Form for you, Boss! 📋\n"
-                    "Please fill in customer name, fabric, embroidery style, and stitches."
+                    "Please fill in customer name, order type, template, and quantity."
                 )
                 return state
             elif raw_msg == "2":

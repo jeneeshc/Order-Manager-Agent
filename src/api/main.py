@@ -218,12 +218,18 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
             final_state_dict = cjs_bot.invoke(initial_state, config={"recursion_limit": 20})
             rebuilt_state = AgentState(**final_state_dict)
             
-            # 3. Decision logic
             if rebuilt_state.send_order_form:
                  # Trigger native WhatsApp Flow
                  flow_id = os.getenv("WHATSAPP_FLOW_ID")
+                 msg_text = rebuilt_state.final_reply or "Please fill out the order form below, Boss:"
                  if flow_id:
-                     whatsapp_service.send_flow_message(sender_phone, flow_id)
+                     sent = whatsapp_service.send_flow_message(sender_phone, flow_id, message_text=msg_text)
+                     if not sent:
+                         whatsapp_service.send_text_message(
+                             sender_phone,
+                             "⚠️ We had trouble opening the interactive form. You can reply directly with:\n"
+                             "*Customer Name*, *Order Type*, *Template Name*, *Quantity*, and *Expected Delivery Date*."
+                         )
                  else:
                      whatsapp_service.send_text_message(sender_phone, "Error: Flow ID missing from config.")
                  memory_service.save_state(sender_phone, rebuilt_state)

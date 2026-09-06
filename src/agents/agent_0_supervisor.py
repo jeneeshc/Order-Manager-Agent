@@ -83,6 +83,13 @@ class SupervisorAgent:
         next_step = decision.next_step
         reasoning = decision.reasoning
 
+        # Route to collector if user is interacting with an active menu or numeric choice
+        msg_clean = (state.raw_message or "").strip()
+        is_menu_code = msg_clean in {"0", "1", "2", "3", "4", "5", "21", "22", "23", "24", "31", "32", "33", "34", "51", "52"}
+        if (state.active_menu or is_menu_code) and not state.final_reply:
+            next_step = "collector"
+            reasoning = f"Active menu '{state.active_menu}' or choice '{msg_clean}' in progress, routing to collector."
+
         # Override to collector if routing to invoice/secretary but intents are not yet extracted
         if next_step == "invoice" and not (state.is_pending_invoicing_query or state.is_invoicing_done_update):
             print(f"[{self.name}] Guardrail Triggered! Invoicing intent not extracted yet. Overriding next_step to 'collector'.")
@@ -128,9 +135,9 @@ class SupervisorAgent:
                 reasoning = f"Guardrail overridden to collector due to missing required fields: {', '.join(missing_fields)}"
 
         # If a final reply or order form has already been formulated, force termination
-        if state.final_reply or state.send_order_form or (state.active_menu and not state.is_secretary_query):
+        if state.final_reply or state.send_order_form:
             next_step = "END"
-            reasoning = "Final reply or form/menu ready, routing to END."
+            reasoning = "Final reply or form ready, routing to END."
 
         print(f"[{self.name}] Supervisor Routing Decision: {next_step} (original: {decision.next_step}, reasoning: {reasoning})")
         
