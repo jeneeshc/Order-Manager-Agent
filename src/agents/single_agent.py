@@ -95,12 +95,23 @@ class CJSSingleAgent:
     2. Deterministic State Machine for Menu options and master data entry (< 200ms).
     3. Exactly 1 Gemini Flash LLM call for natural conversational chat (< 1.5s).
     """
-    def __init__(self):
+    def __init__(self, sheets_service=None):
         self.name = "CJS Designs Agent"
         self.scheduler = ProductionSchedulerAgent()
         self.estimator = EstimationAgent()
         self.secretary = SecretaryAgent()
-        self.db = GoogleSheetsService()
+        
+        # Support injected service or mock on agent_1_collector
+        if sheets_service is not None:
+            self.db = sheets_service
+        else:
+            try:
+                import src.agents.agent_1_collector as a1
+                SheetsCls = getattr(a1, "GoogleSheetsService", GoogleSheetsService)
+                self.db = SheetsCls()
+            except Exception:
+                self.db = GoogleSheetsService()
+        self.sheets = self.db
         
         # Single Unified LLM instance
         api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
@@ -109,9 +120,16 @@ class CJSSingleAgent:
             google_api_key=api_key,
             temperature=0.2
         )
+        self.router = self.llm
 
     def process(self, state: AgentState) -> AgentState:
         """Main processing entrypoint."""
+        # If final_reply is already set, conclude routing immediately
+        if state.final_reply:
+            state.next_step = "END"
+            state.raw_message = state.final_reply
+            return state
+
         raw_msg = (state.raw_message or "").strip()
         msg_lower = raw_msg.lower()
 
@@ -122,6 +140,7 @@ class CJSSingleAgent:
             state.active_menu = None
             state.pending_adjustment_type = None
             state.pending_adjustment_order_id = None
+            state.next_step = "END"
             state.final_reply = "Operation cancelled, Boss. Reply *'Hi'* anytime to see the menu. 👍"
             return state
 
@@ -132,6 +151,7 @@ class CJSSingleAgent:
             state.active_menu = "MAIN"
             state.pending_adjustment_type = None
             state.pending_adjustment_order_id = None
+            state.next_step = "END"
             state.final_reply = MAIN_MENU_TEXT
             return state
 
@@ -139,16 +159,19 @@ class CJSSingleAgent:
             state.active_menu = "MAIN"
             state.pending_adjustment_type = None
             state.pending_adjustment_order_id = None
+            state.next_step = "END"
             state.final_reply = MAIN_MENU_TEXT
             return state
 
         # -------------------------------------------------------------
         # 2. Direct Fast-Action Numeric Codes
         # -------------------------------------------------------------
-        # Option 1: Open Order Form
-        if raw_msg == "1" or msg_lower in {"new order", "create order", "order form", "open form"}:
+        # Option 1: Open Order Form (only from main menu or top level)
+        if ((raw_msg == "1" and state.active_menu in ("MAIN", None))
+                or msg_lower in {"new order", "create order", "order form", "open form"}):
             state.send_order_form = True
             state.active_menu = None
+            state.next_step = "END"
             state.final_reply = (
                 "Opening WhatsApp Order Form for you, Boss! 📋\n"
                 "Please select customer, order type, template, quantity, and delivery date."
@@ -208,6 +231,9 @@ class CJSSingleAgent:
             return state
 
         if raw_msg == "31" or (state.active_menu == "INVOICING" and raw_msg == "1") or "pending invoice" in msg_lower:
+            state.is_pending_invoicing_query = True
+            state.active_menu = None
+            state.next_step = "END"
             pending = self.db.get_orders_pending_invoicing()
             if not pending:
                 state.final_reply = "Boss, all completed orders have been invoiced! No pending orders. 🎉"
@@ -219,7 +245,6 @@ class CJSSingleAgent:
                         lines.append(f"  • *{o['order_id']}* — {o.get('template', 'Order')} | Due: {o.get('completion_date', '')} | Cost: {o.get('cost', '')}")
                 lines.append("\nReply *32* to mark an order as invoiced, or reply with customer name to update.")
                 state.final_reply = "\n".join(lines)
-            state.active_menu = None
             return state
 
         if raw_msg == "32" or (state.active_menu == "INVOICING" and raw_msg == "2"):
@@ -243,6 +268,9 @@ class CJSSingleAgent:
             return state
 
         if raw_msg == "34" or (state.active_menu == "INVOICING" and raw_msg == "4") or "debtor" in msg_lower:
+            state.is_payment_query = True
+            state.active_menu = None
+            state.next_step = "END"
             pending_payments = self.db.get_pending_payments()
             if not pending_payments:
                 state.final_reply = "Boss, there are no outstanding debtors or unpaid completed orders right now! 💵"
@@ -253,12 +281,17 @@ class CJSSingleAgent:
                     for o in orders:
                         lines.append(f"  • *{o['order_id']}* — Due: {o.get('cost', 'Rs 0')}")
                 state.final_reply = "\n".join(lines)
-            state.active_menu = None
             return state
 
         # Option 4: Daily Briefing
-        if raw_msg == "4" and (state.active_menu == "MAIN" or not state.active_menu) or msg_lower in {"briefing", "daily brief", "tasks today", "summary"}:
+        if (raw_msg == "4" and (state.active_menu == "MAIN" or not state.active_menu)) or msg_lower in {"briefing", "daily brief", "tasks today", "summary"}:
+            state.is_secretary_query = True
+            state.active_menu = None
+            state.next_step = "END"
             state = self.secretary.process(state)
+            state.is_secretary_query = True
+            state.active_menu = None
+            state.next_step = "END"
             return state
 
         # Option 5: Vendors & Expenses / Codes 51-52
@@ -268,7 +301,8 @@ class CJSSingleAgent:
             return state
 
         if raw_msg == "51" or (state.active_menu == "VENDORS" and raw_msg == "1"):
-            vendors = self.db.get_vendors()
+            vendors_fn = getattr(self.db, "get_all_vendors", getattr(self.db, "get_vendors", None)) or self.db.get_vendors
+            vendors = vendors_fn()
             if not vendors:
                 state.final_reply = "Boss, no vendors are currently registered in 'Vendors' tab."
             else:
@@ -277,6 +311,7 @@ class CJSSingleAgent:
                     v_lines.append(f"• *{v.get('name', 'Unknown')}* ({v.get('category', 'General')}) — Ph: {v.get('phone', 'N/A')}")
                 state.final_reply = "🧵 *Active Vendors Directory*\n\n" + "\n".join(v_lines)
             state.active_menu = None
+            state.next_step = "END"
             return state
 
         if raw_msg == "52" or (state.active_menu == "VENDORS" and raw_msg == "2"):
@@ -434,9 +469,14 @@ class CJSSingleAgent:
             new_date = raw_msg.strip()
             target_oid = state.pending_adjustment_order_id
             self.db.update_order_field(target_oid, "delivery_date", new_date)
+            state.is_field_override = True
+            state.order_id = target_oid
+            state.override_field = "delivery_date"
+            state.override_value = new_date
             state.active_menu = None
             state.pending_adjustment_order_id = None
             state.pending_adjustment_type = None
+            state.next_step = "END"
             state.final_reply = f"✅ *Field Updated!*\nOrder *{target_oid}* — *Delivery Date* updated to *{new_date}*. 📅"
             return state
 
@@ -469,9 +509,14 @@ class CJSSingleAgent:
                 return state
             target_oid = state.pending_adjustment_order_id
             self.db.update_order_field(target_oid, "machine", machine)
+            state.is_field_override = True
+            state.order_id = target_oid
+            state.override_field = "machine"
+            state.override_value = machine
             state.active_menu = None
             state.pending_adjustment_order_id = None
             state.pending_adjustment_type = None
+            state.next_step = "END"
             state.final_reply = f"✅ *Machine Reassigned!*\nOrder *{target_oid}* has been reassigned to *{machine}*. 🧵"
             return state
 
@@ -491,10 +536,16 @@ class CJSSingleAgent:
         if state.active_menu == "INPUT_NEW_COST":
             cost_str = "".join(c for c in raw_msg if c.isdigit() or c == '.')
             target_oid = state.pending_adjustment_order_id
-            self.db.update_order_field(target_oid, "cost", f"Rs {cost_str}")
+            cost_val = f"Rs {cost_str}"
+            self.db.update_order_field(target_oid, "cost", cost_val)
+            state.is_field_override = True
+            state.order_id = target_oid
+            state.override_field = "cost"
+            state.override_value = cost_val
             state.active_menu = None
             state.pending_adjustment_order_id = None
             state.pending_adjustment_type = None
+            state.next_step = "END"
             state.final_reply = f"✅ *Cost Updated!*\nOrder *{target_oid}* — *Total Cost* updated to *Rs {cost_str}*. 💰"
             return state
 

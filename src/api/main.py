@@ -153,7 +153,7 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                 else:
                     raw_cust_name = new_cust or interactive_payload.get("customer_name")
                 
-                from src.agents.agent_1_collector import sanitize_customer_name
+                from src.agents.single_agent import sanitize_customer_name
                 sanitized_cust_name = sanitize_customer_name(raw_cust_name)
                 
                 initial_state.customer_name = sanitized_cust_name
