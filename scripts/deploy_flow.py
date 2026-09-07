@@ -42,12 +42,10 @@ def build_flow_json() -> dict:
     if not customer_options:
         customer_options = [{"id": "Standard Client", "title": "Standard Client"}]
             
-    # 2. Template Options (strictly existing templates with auto-population of stitches & labor minutes)
+    # 2. Template Options (strictly existing templates)
     templates_list = sheets.get_description_templates() or []
     template_options = []
     seen_templates = set()
-    first_template_stitches = 50000
-    first_template_labor_mins = 360
 
     for t in templates_list:
         tname = t.get("template_name", "").strip()
@@ -55,58 +53,25 @@ def build_flow_json() -> dict:
             seen_templates.add(tname)
             machine = t.get("machine", "")
             title_str = f"{tname} ({machine})" if machine and machine != "None" else tname
-            st = int(t.get("stitch_count") or 0)
-            lm = int(t.get("labor_minutes") or 0)
-            if not template_options:
-                first_template_stitches = st
-                first_template_labor_mins = lm
             template_options.append({
                 "id": tname,
-                "title": title_str[:30],
-                "on-select-action": {
-                    "name": "update_data",
-                    "payload": {
-                        "init_stitch_count": st,
-                        "init_labor_minutes": lm
-                    }
-                }
+                "title": title_str[:30]
             })
     if not template_options:
         template_options = [{
             "id": "Standard Embroidery",
-            "title": "Standard Embroidery",
-            "on-select-action": {
-                "name": "update_data",
-                "payload": {
-                    "init_stitch_count": 10000,
-                    "init_labor_minutes": 60
-                }
-            }
+            "title": "Standard Embroidery"
         }]
 
-    # 3. Order Types (clean list with on-select auto-population)
+    # 3. Order Types (clean list)
     order_types = [
         {
             "id": "Machine Embroidery",
-            "title": "Machine Embroidery",
-            "on-select-action": {
-                "name": "update_data",
-                "payload": {
-                    "init_stitch_count": first_template_stitches,
-                    "init_labor_minutes": first_template_labor_mins
-                }
-            }
+            "title": "Machine Embroidery"
         },
         {
             "id": "Embroidery Designing",
-            "title": "Embroidery Designing",
-            "on-select-action": {
-                "name": "update_data",
-                "payload": {
-                    "init_stitch_count": 0,
-                    "init_labor_minutes": 30
-                }
-            }
+            "title": "Embroidery Designing"
         }
     ]
 
@@ -139,11 +104,11 @@ def build_flow_json() -> dict:
                     },
                     "init_stitch_count": {
                         "type": "number",
-                        "__example__": first_template_stitches
+                        "__example__": 50000
                     },
                     "init_labor_minutes": {
                         "type": "number",
-                        "__example__": first_template_labor_mins
+                        "__example__": 360
                     },
                     "editing_order_id": {
                         "type": "string",
@@ -208,14 +173,14 @@ def build_flow_json() -> dict:
                                 {
                                     "type": "TextInput",
                                     "name": "stitch_count",
-                                    "label": "Stitch Count",
+                                    "label": "Stitch Count (Optional)",
                                     "input-type": "number",
                                     "required": False
                                 },
                                 {
                                     "type": "TextInput",
                                     "name": "labor_minutes",
-                                    "label": "Labor Minutes",
+                                    "label": "Labor Minutes (Optional)",
                                     "input-type": "number",
                                     "required": False
                                 }

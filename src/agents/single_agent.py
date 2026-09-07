@@ -186,20 +186,16 @@ class CJSSingleAgent:
         # Option 1: Open Order Form (only from main menu or top level)
         if ((raw_msg == "1" and state.active_menu in ("MAIN", None))
                 or msg_lower in {"new order", "create order", "order form", "open form"}):
-            first_tmpl = self.db.get_description_templates()
-            init_st = int(first_tmpl[0].get("stitch_count") or 0) if first_tmpl else 50000
-            init_lm = int(first_tmpl[0].get("labor_minutes") or 0) if first_tmpl else 360
-            init_tname = first_tmpl[0].get("template_name") if first_tmpl else "Saree Scallop"
             state.editing_order_id = None
             state.flow_init_data = {
                 "editing_order_id": "",
                 "init_customer": "",
-                "init_order_type": "Machine Embroidery",
-                "init_template": init_tname,
+                "init_order_type": "",
+                "init_template": "",
                 "init_quantity": 1,
                 "init_delivery_date": str(int(time.time() * 1000)),
-                "init_stitch_count": init_st,
-                "init_labor_minutes": init_lm
+                "init_stitch_count": None,
+                "init_labor_minutes": None
             }
             state.send_order_form = True
             state.active_menu = None

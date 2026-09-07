@@ -394,7 +394,7 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
             whatsapp_service.send_text_message(sender_phone, error_msg)
 
 @app.post("/webhook")
-async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
+async def handle_webhook(request: Request, background_tasks: BackgroundTasks = None):
     """WhatsApp Webhook message handler (POST)."""
     data = await request.json()
     
@@ -429,11 +429,9 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
 
                         print(f"[RECV] Message from {sender_phone}: {text_body}")
                         
-                        # ✨ Immediate Acknowledgment to Siny to manage perceived latency ✨
-                        whatsapp_service.send_text_message(sender_phone, "Working on your request, Boss... 🔄")
-                        
-                        # Add WhatsApp message processing to background tasks
-                        background_tasks.add_task(process_webhook_message, sender_phone, text_body, interactive_payload)
+                        # Process WhatsApp message synchronously to keep Cloud Run CPU at 100%
+                        # Deterministic pipeline completes in ~2-3 seconds, well within Meta's 20s SLA
+                        process_webhook_message(sender_phone, text_body, interactive_payload)
     
     return {"status": "received"}
 

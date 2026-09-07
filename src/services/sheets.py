@@ -13,6 +13,14 @@ class GoogleSheetsService:
     _cached_service = None
     _config_cache = None
     _config_cache_time = 0
+    _customer_map_cache = None
+    _customer_map_cache_time = 0
+    _active_orders_cache = None
+    _active_orders_cache_time = 0
+    _templates_cache = None
+    _templates_cache_time = 0
+    _holidays_cache = None
+    _holidays_cache_time = 0
 
     def __init__(self):
         self.spreadsheet_id = os.getenv("GOOGLE_SHEET_ID")
@@ -50,7 +58,12 @@ class GoogleSheetsService:
         """
         Reads template specifications from 'Description_Templates'!A:F.
         Cols: A=Service Category (Order Type), B=Description, C=Template Name, D=Machine, E=Labor Minutes, F=Stitch Count.
+        Cached for 5 minutes to avoid redundant Sheets API calls.
         """
+        import time
+        now = time.time()
+        if GoogleSheetsService._templates_cache and (now - GoogleSheetsService._templates_cache_time) < 300:
+            return GoogleSheetsService._templates_cache
         templates = []
         if not getattr(self, 'service', None): return templates
         try:
@@ -91,6 +104,8 @@ class GoogleSheetsService:
                         "stitch_count": base_stitches,
                         "base_stitch_count": base_stitches
                     })
+            GoogleSheetsService._templates_cache = templates
+            GoogleSheetsService._templates_cache_time = now
             return templates
         except Exception as e:
             print(f"[SheetsAPI] get_description_templates failed: {e}")
@@ -151,6 +166,35 @@ class GoogleSheetsService:
         except Exception as e:
             print(f"[SheetsAPI] get_all_customers_list failed: {e}")
             return customers
+
+    def get_all_customers_map(self) -> dict:
+        """
+        Returns a dictionary mapping Customer ID -> Name from the 'Customers' sheet.
+        Cached for 60 seconds to reduce redundant API calls.
+        """
+        import time
+        now = time.time()
+        if GoogleSheetsService._customer_map_cache and (now - GoogleSheetsService._customer_map_cache_time) < 60:
+            return GoogleSheetsService._customer_map_cache
+        mapping = {}
+        if not self.service: return mapping
+        try:
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, range="Customers!A:D"
+            ).execute()
+            rows = result.get('values', [])
+            for i, row in enumerate(rows):
+                if i == 0 or len(row) < 2: continue
+                cid = str(row[0]).strip()
+                cname = str(row[1]).strip()
+                if cid and cname:
+                    mapping[cid] = cname
+            GoogleSheetsService._customer_map_cache = mapping
+            GoogleSheetsService._customer_map_cache_time = now
+            return mapping
+        except Exception as e:
+            print(f"[SheetsAPI] get_all_customers_map failed: {e}")
+            return mapping
 
     def append_order(self, state) -> str:
         """
@@ -366,7 +410,12 @@ class GoogleSheetsService:
         """
         Reads explicitly marked off-days from the 'Holidays' tab in Boss's Google Sheet.
         Explicitly bypasses Header A1 and parses strict 2-April-2026 formats natively.
+        Cached for 1 hour to reduce redundant Sheets API calls.
         """
+        import time
+        now = time.time()
+        if GoogleSheetsService._holidays_cache and (now - GoogleSheetsService._holidays_cache_time) < 3600:
+            return GoogleSheetsService._holidays_cache
         holidays = []
         if not self.service: return holidays
         
@@ -395,6 +444,8 @@ class GoogleSheetsService:
                             pass
                             
             print(f"[SheetsAPI] Extracted {len(holidays)} explicit holidays from 'Holidays' tab.")
+            GoogleSheetsService._holidays_cache = holidays
+            GoogleSheetsService._holidays_cache_time = now
             return holidays
             
         except Exception as e:
@@ -1285,8 +1336,13 @@ class GoogleSheetsService:
         """
         Fetches the most recent active/in-progress orders (excluding completed, complete, invoiced, paid, cancelled)
         from 'Orders'!A:P to present as quick-select options for Boss.
-        Accurately handles both new (16-col) and legacy schema layouts.
+        Cached for 30 seconds to avoid redundant calls during menu navigation.
         """
+        import time
+        now = time.time()
+        if GoogleSheetsService._active_orders_cache and (now - GoogleSheetsService._active_orders_cache_time) < 30:
+            cached = GoogleSheetsService._active_orders_cache
+            return cached[-limit:] if len(cached) > limit else cached
         active_orders = []
         if not self.service: return active_orders
         try:
@@ -1350,6 +1406,8 @@ class GoogleSheetsService:
                     "delivery_date": delivery,
                     "cost": cost
                 })
+            GoogleSheetsService._active_orders_cache = active_orders
+            GoogleSheetsService._active_orders_cache_time = now
             return active_orders[-limit:]
         except Exception as e:
             print(f"[SheetsAPI] get_active_orders_summary failed: {e}")
