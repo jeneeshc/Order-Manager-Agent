@@ -327,7 +327,12 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
             
             if rebuilt_state.send_order_form:
                  # Trigger native WhatsApp Flow
-                 flow_id = os.getenv("WHATSAPP_FLOW_ID") or "1508478667983867"
+                 config_vars = db_service.get_config_variables()
+                 flow_id = (
+                     str(config_vars.get("WhatsApp Flow ID") or config_vars.get("WHATSAPP_FLOW_ID") or "").strip()
+                     or os.getenv("WHATSAPP_FLOW_ID")
+                     or "1761036464934039"
+                 )
                  msg_text = rebuilt_state.final_reply or "Please fill out the order form below, Boss:"
                  header_text = f"Edit Order {rebuilt_state.editing_order_id}" if rebuilt_state.editing_order_id else "Order Creation"
                  if flow_id:

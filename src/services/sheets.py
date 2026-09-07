@@ -22,6 +22,21 @@ class GoogleSheetsService:
     _holidays_cache = None
     _holidays_cache_time = 0
 
+    @classmethod
+    def clear_all_caches(cls):
+        """Clears all in-memory static caches to force fresh reads from Google Sheets."""
+        cls._config_cache = None
+        cls._config_cache_time = 0
+        cls._customer_map_cache = None
+        cls._customer_map_cache_time = 0
+        cls._active_orders_cache = None
+        cls._active_orders_cache_time = 0
+        cls._templates_cache = None
+        cls._templates_cache_time = 0
+        cls._holidays_cache = None
+        cls._holidays_cache_time = 0
+        print("[SheetsAPI] All in-memory caches cleared.")
+
     def __init__(self):
         self.spreadsheet_id = os.getenv("GOOGLE_SHEET_ID")
         self.creds_file = r"d:\Projects\CJSDesigns\credentials.json"
@@ -1208,6 +1223,41 @@ class GoogleSheetsService:
         except Exception as e:
             print(f"[SheetsAPI] get_config_variables failed: {e}")
             return config
+
+    def set_config_variable(self, var_name: str, var_val: str) -> bool:
+        """Sets or updates a variable in the 'Config' tab (Col A=Variable Name, Col B=Value)."""
+        if not self.service: return False
+        try:
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id,
+                range="'Config'!A:B"
+            ).execute()
+            rows = result.get('values', [])
+            target_row = None
+            for i, row in enumerate(rows):
+                if row and str(row[0]).strip().lower() == var_name.strip().lower():
+                    target_row = i + 1
+                    break
+            if target_row:
+                self.service.spreadsheets().values().update(
+                    spreadsheetId=self.spreadsheet_id,
+                    range=f"'Config'!B{target_row}",
+                    valueInputOption="USER_ENTERED",
+                    body={'values': [[str(var_val)]]}
+                ).execute()
+            else:
+                self.service.spreadsheets().values().append(
+                    spreadsheetId=self.spreadsheet_id,
+                    range="'Config'!A:B",
+                    valueInputOption="USER_ENTERED",
+                    body={'values': [[var_name, str(var_val)]]}
+                ).execute()
+            GoogleSheetsService._config_cache = None
+            print(f"[SheetsAPI] Set Config variable '{var_name}' = '{var_val}'")
+            return True
+        except Exception as e:
+            print(f"[SheetsAPI] set_config_variable failed: {e}")
+            return False
 
     def get_sales_ledger(self, limit: int = 50) -> list:
         """

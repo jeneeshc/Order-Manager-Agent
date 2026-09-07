@@ -284,6 +284,15 @@ def redeploy_order_flow() -> str:
     publish_flow(new_id)
     update_env_flow_id(new_id)
     os.environ["WHATSAPP_FLOW_ID"] = new_id
+    
+    # Persist in Google Sheets Config tab so all instances share the active flow ID
+    try:
+        from src.services.sheets import GoogleSheetsService
+        db = GoogleSheetsService()
+        db.set_config_variable("WhatsApp Flow ID", new_id)
+    except Exception as e:
+        print(f"[deploy_flow] Note: Could not save flow ID to Config sheet: {e}")
+
     print(f"\n==========================================")
     print(f"SUCCESS! New Flow ID: {new_id}")
     print(f"==========================================")

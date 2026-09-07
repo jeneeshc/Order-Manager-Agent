@@ -18,8 +18,9 @@ MAIN_MENU_TEXT = (
     "5️⃣ *Vendors & Expenses* (View suppliers or recent cash outflows)\n"
     "6️⃣ *Add New Customer* (Register a customer in Google Sheets)\n"
     "7️⃣ *Add New Template* (Add design template with machine & hours)\n"
-    "8️⃣ *Add New Order Type* (Add embroidery category)\n\n"
-    "_Reply with the number (e.g. 1, 2, 6) or type a command directly._"
+    "8️⃣ *Add New Order Type* (Add embroidery category)\n"
+    "9️⃣ *Sync with Back-end* (Refresh WhatsApp Form with latest Sheets data)\n\n"
+    "_Reply with the number (e.g. 1, 2, 9) or type a command directly._"
 )
 
 ADJUST_MENU_TEXT = (
@@ -403,6 +404,45 @@ class CJSSingleAgent:
             )
             return state
 
+        # Option 9 / Code 91: Sync with Back-end (Refresh WhatsApp Form from Google Sheets)
+        sync_triggers = {
+            "9", "91", "sync", "sync backend", "sync with backend", "sync back-end",
+            "sync with back-end", "refresh form", "sync form", "update form", "sync sheets"
+        }
+        if raw_msg in sync_triggers or (state.active_menu == "MAIN" and raw_msg == "9") or msg_lower in sync_triggers:
+            state.active_menu = None
+            state.next_step = "END"
+            
+            # 1. Invalidate all in-memory caches
+            GoogleSheetsService.clear_all_caches()
+            
+            # 2. Trigger Flow recompilation and deployment to Meta
+            try:
+                from scripts.deploy_flow import redeploy_order_flow
+                new_flow_id = redeploy_order_flow()
+                customers = self.db.get_all_customers_list() or []
+                templates = self.db.get_description_templates() or []
+                
+                # Sample 3 customer names for the message
+                sample_names = ", ".join(customers[:3]) + (f", +{len(customers)-3} more" if len(customers) > 3 else "")
+                
+                state.final_reply = (
+                    f"✅ *Backend & WhatsApp Synced Successfully!* 🔄\n\n"
+                    f"• *Customers Synced:* {len(customers)} clients ({sample_names})\n"
+                    f"• *Templates Synced:* {len(templates)} design templates\n"
+                    f"• *Active Flow ID:* `{new_flow_id}`\n"
+                    f"• *Caches:* Cleared & refreshed from Google Sheets\n\n"
+                    f"All WhatsApp order forms are now up-to-date with your latest sheet changes! 👍\n"
+                    f"Reply *'1'* anytime to open the updated Order Form."
+                )
+            except Exception as e:
+                print(f"[{self.name}] Sync failed: {e}")
+                state.final_reply = (
+                    f"⚠️ *Sync Encountered an Error:*\n{e}\n\n"
+                    f"In-memory caches were cleared. Please try again in a few moments or reply *'Hi'* for the menu."
+                )
+            return state
+
         # -------------------------------------------------------------
         # 3. Handling Interactive Input & Selection States
         # -------------------------------------------------------------
@@ -698,11 +738,13 @@ Guidelines:
 6️⃣ Add New Customer
 7️⃣ Add New Template
 8️⃣ Add New Order Type
+9️⃣ Sync with Back-end (Refresh WhatsApp Form)
 - If Boss wants to modify/edit an active order, suggest replying '2' (Adjust Existing Order).
 - If Boss is asking about placing an order, suggest replying '1' to open the instant WhatsApp Order Form.
 - If Boss is asking what to do today or wants a schedule summary, suggest replying '4' for the 5-Pillar Daily Briefing.
 - If Boss is asking about invoices or payments, summarize or suggest replying '3'.
 - If Boss wants to register a client or template, suggest replying '6' (Add Customer) or '7' (Add Template).
+- If Boss wants to sync or refresh backend/forms/Google Sheets, suggest replying '9' (Sync with Back-end).
 - If Boss asks a general question, answer helpfully directly.
 """
         try:
