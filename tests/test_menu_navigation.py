@@ -74,7 +74,8 @@ def test_greeting_triggers_main_menu(mock_sheets_service):
         assert "2️⃣ *Adjust Existing Order*" in result.final_reply
         assert "3️⃣ *Pending Invoicing*" in result.final_reply
         assert "4️⃣ *Daily Briefing & Tasks*" in result.final_reply
-        assert "5️⃣ *Vendors & Expenses*" in result.final_reply
+        assert "5️⃣ *Active Vendors Directory*" in result.final_reply
+        assert "6️⃣ *Add New Customer Form*" in result.final_reply
 
 def test_main_menu_option_1_launches_order_form(mock_sheets_service):
     collector = OrderCollectorAgent()
@@ -130,15 +131,24 @@ def test_main_menu_option_4_secretary_briefing(mock_sheets_service):
     assert result.is_secretary_query is True
     assert result.active_menu is None
 
-def test_main_menu_option_5_vendors_submenu(mock_sheets_service):
+def test_main_menu_option_5_vendors_direct(mock_sheets_service):
     collector = OrderCollectorAgent()
     state = AgentState(raw_message="5", active_menu="MAIN")
     result = collector.process(state)
     
-    assert result.active_menu == "VENDORS"
-    assert "Vendors & Expenses Menu" in result.final_reply
+    assert result.active_menu is None
     assert "Active Vendors Directory" in result.final_reply
-    assert "Recent Expenses" in result.final_reply
+    assert "Coats India" in result.final_reply
+    assert "Surat Fabrics" in result.final_reply
+
+def test_main_menu_option_6_launches_customer_form(mock_sheets_service):
+    collector = OrderCollectorAgent()
+    state = AgentState(raw_message="6", active_menu="MAIN")
+    result = collector.process(state)
+    
+    assert result.send_customer_form is True
+    assert result.active_menu == "INPUT_NEW_CUSTOMER"
+    assert "Customer Registration Form" in result.final_reply
 
 def test_delivery_date_adjustment_flow(mock_sheets_service):
     collector = OrderCollectorAgent()
@@ -389,15 +399,15 @@ def test_option_3_has_no_submenu_and_completes_directly(mock_sheets_service):
     assert "all completed orders have been invoiced" in result.final_reply
 
 
-def test_vendors_submenu_rejects_main_menu_numbers():
-    """Replying '6' while in VENDORS menu must NOT trigger 'Add New Customer'."""
+def test_option_5_has_no_submenu_and_completes_directly(mock_sheets_service):
+    """Option 5 must directly return Active Vendors Directory with active_menu=None."""
     collector = OrderCollectorAgent()
-    state = AgentState(raw_message="6", active_menu="VENDORS")
+    state = AgentState(raw_message="5", active_menu="MAIN")
     result = collector.process(state)
 
-    assert result.active_menu == "VENDORS"
-    assert "valid option (1-2)" in result.final_reply
-    assert "Add New Customer" not in result.final_reply
+    assert result.active_menu is None
+    assert "Active Vendors Directory" in result.final_reply
+    assert "Coats India" in result.final_reply
 
 
 def test_input_new_customer_rejects_numeric_input(mock_sheets_service):

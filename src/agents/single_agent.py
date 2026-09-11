@@ -15,12 +15,9 @@ MAIN_MENU_TEXT = (
     "2️⃣ *Adjust Existing Order* (Select an active order to edit in WhatsApp Form)\n"
     "3️⃣ *Pending Invoicing* (Completed orders awaiting bill per customer)\n"
     "4️⃣ *Daily Briefing & Tasks* (Today's summary, queues, and reminders)\n"
-    "5️⃣ *Vendors & Expenses* (View suppliers or recent cash outflows)\n"
-    "6️⃣ *Add New Customer* (Register a customer in Google Sheets)\n"
-    "7️⃣ *Add New Template* (Add design template with machine & hours)\n"
-    "8️⃣ *Add New Order Type* (Add embroidery category)\n"
-    "9️⃣ *Sync with Back-end* (Refresh WhatsApp Form with latest Sheets data)\n\n"
-    "_Reply with the number (e.g. 1, 2, 9) or type a command directly._"
+    "5️⃣ *Active Vendors Directory* (View suppliers and contact details)\n"
+    "6️⃣ *Add New Customer Form* (Register a customer in Google Sheets)\n\n"
+    "_Reply with the number (1-6) or type a command directly._"
 )
 
 ADJUST_MENU_TEXT = (
@@ -481,37 +478,6 @@ class CJSSingleAgent:
             else:
                 state.final_reply = f"Boss, please reply with a valid number (1-{len(orders)}) or Order ID from the list above, or '0' for main menu."
                 return state
-
-        # Sub-menu: VENDORS (Option 5 sub-menu)
-        if state.active_menu == "VENDORS":
-            if raw_msg in ("1", "51"):
-                vendors_fn = getattr(self.db, "get_all_vendors", getattr(self.db, "get_vendors", None)) or self.db.get_vendors
-                vendors = vendors_fn()
-                if not vendors:
-                    state.final_reply = "Boss, no vendors are currently registered in 'Vendors' tab."
-                else:
-                    v_lines = []
-                    for v in vendors:
-                        v_lines.append(f"• *{v.get('name', 'Unknown')}* ({v.get('category', 'General')}) — Ph: {v.get('phone', 'N/A')}")
-                    state.final_reply = "🧵 *Active Vendors Directory*\n\n" + "\n".join(v_lines)
-                state.active_menu = None
-                state.next_step = "END"
-                return state
-            elif raw_msg in ("2", "52"):
-                expenses = self.db.get_recent_expenses(limit=5)
-                if not expenses:
-                    state.final_reply = "Boss, no recent expenses found in 'Expense_Ledger'."
-                else:
-                    e_lines = []
-                    for e in expenses:
-                        e_lines.append(f"• *{e.get('date', '')}*: Rs {e.get('amount', 0)} — {e.get('description', '')} ({e.get('category', '')})")
-                    state.final_reply = "💸 *Recent Expenses (Expense Ledger)*\n\n" + "\n".join(e_lines)
-                state.active_menu = None
-                return state
-            else:
-                state.final_reply = "Boss, please select a valid option (1-2) from the Vendors menu, or reply '0' for the main menu."
-                return state
-
         # Fallback guard for any sub-menu: Ensure sub-menu responses NEVER leak into main menu or LLM
         if state.active_menu and state.active_menu != "MAIN":
             state.active_menu = "MAIN"
@@ -654,13 +620,11 @@ class CJSSingleAgent:
             state.next_step = "END"
             return state
 
-        # Option 5: Vendors & Expenses / Codes 51-52
-        if raw_msg == "5" and state.active_menu in ("MAIN", None):
-            state.active_menu = "VENDORS"
-            state.final_reply = VENDORS_MENU_TEXT
-            return state
-
-        if raw_msg == "51" and state.active_menu in ("MAIN", None):
+        # Option 5: Active Vendors Directory (Direct report, no sub-menu)
+        if (
+            (raw_msg in {"5", "51"} and state.active_menu in ("MAIN", None))
+            or (msg_lower in {"vendor", "vendors", "vendor directory", "active vendors", "suppliers"} and state.active_menu in ("MAIN", None))
+        ):
             vendors_fn = getattr(self.db, "get_all_vendors", getattr(self.db, "get_vendors", None)) or self.db.get_vendors
             vendors = vendors_fn()
             if not vendors:
@@ -674,7 +638,7 @@ class CJSSingleAgent:
             state.next_step = "END"
             return state
 
-        if raw_msg == "52" and state.active_menu in ("MAIN", None):
+        if (raw_msg == "52" and state.active_menu in ("MAIN", None)) or (msg_lower in {"expense", "expenses", "expense ledger"} and state.active_menu in ("MAIN", None)):
             expenses = self.db.get_recent_expenses(limit=5)
             if not expenses:
                 state.final_reply = "Boss, no recent expenses found in 'Expense_Ledger'."
@@ -684,20 +648,21 @@ class CJSSingleAgent:
                     e_lines.append(f"• *{e.get('date', '')}*: Rs {e.get('amount', 0)} — {e.get('description', '')} ({e.get('category', '')})")
                 state.final_reply = "💸 *Recent Expenses (Expense Ledger)*\n\n" + "\n".join(e_lines)
             state.active_menu = None
+            state.next_step = "END"
             return state
 
-        # Option 6 / Code 61: Add New Customer
+        # Option 6 / Code 61: Add New Customer Form
         if (
             (raw_msg in {"6", "61"} and state.active_menu in ("MAIN", None))
-            or (msg_lower in {"add customer", "new customer", "create customer"} and state.active_menu in ("MAIN", None))
+            or (msg_lower in {"add customer", "new customer", "create customer", "customer form"} and state.active_menu in ("MAIN", None))
         ):
+            state.send_customer_form = True
             state.active_menu = "INPUT_NEW_CUSTOMER"
+            state.next_step = "END"
             state.final_reply = (
-                "👤 *Add New Customer*\n"
-                "Boss, please reply with the customer details:\n\n"
-                "*Format:* Customer Name, Phone (optional), Address/City (optional)\n"
-                "_Example: Priya Boutique, 9876543210, Ernakulam_\n\n"
-                "_Reply 0 to cancel._"
+                "👤 *Add New Customer Form*\n"
+                "Opening Customer Registration Form for you, Boss! 📋\n"
+                "Please fill in the customer name, phone, and address in the form."
             )
             return state
 
@@ -793,18 +758,14 @@ Guidelines:
 2️⃣ Adjust Existing Order (WhatsApp Form edit)
 3️⃣ Pending Invoicing (Completed orders awaiting bill per customer)
 4️⃣ Daily Briefing & Tasks
-5️⃣ Vendors & Expenses
-6️⃣ Add New Customer
-7️⃣ Add New Template
-8️⃣ Add New Order Type
-9️⃣ Sync with Back-end (Refresh WhatsApp Form)
+5️⃣ Active Vendors Directory (View suppliers and contact details)
+6️⃣ Add New Customer Form (Register a customer in Google Sheets)
 - If Boss wants to modify/edit an active order, suggest replying '2' (Adjust Existing Order).
 - If Boss is asking about placing an order, suggest replying '1' to open the instant WhatsApp Order Form.
 - If Boss is asking about pending invoices or bills, summarize or suggest replying '3'.
 - If Boss is asking what to do today or wants a schedule summary, suggest replying '4' for the 5-Pillar Daily Briefing.
-- If Boss wants to view vendors or cash outflows, suggest replying '5'.
-- If Boss wants to register a client or template, suggest replying '6' (Add Customer) or '7' (Add Template).
-- If Boss wants to sync or refresh backend/forms/Google Sheets, suggest replying '9' (Sync with Back-end).
+- If Boss wants to view vendors or suppliers, suggest replying '5'.
+- If Boss wants to register a new customer/client, suggest replying '6' (Add Customer Form).
 - If Boss asks a general question, answer helpfully directly.
 """
         try:

@@ -54,7 +54,8 @@ class AgentState(BaseModel):
     is_payment_query: bool = Field(default=False)
     is_duplicate_confirmed: bool = Field(default=False)
     is_secretary_query: bool = Field(default=False)
-    send_order_form: bool = Field(default=False)    
+    send_order_form: bool = Field(default=False)
+    send_customer_form: bool = Field(default=False)
     is_pending_invoicing_query: bool = Field(default=False)
     is_invoicing_done_update: bool = Field(default=False)
     invoicing_done_customer: Optional[str] = None

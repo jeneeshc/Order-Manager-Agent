@@ -124,6 +124,7 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                 initial_state.raw_message = text_body
                 initial_state.is_missing_info = False
                 initial_state.send_order_form = False
+                initial_state.send_customer_form = False
                 initial_state.next_step = "supervisor"
                 initial_state.hop_count = 0
                 initial_state.final_reply = None
@@ -143,8 +144,36 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                 initial_state = AgentState(raw_message=text_body, sender_id=sender_phone)
             
             # 1.5 Handle Form Submission Bypass
-            # 1.5 Handle Form Submission Bypass
             if interactive_payload:
+                # 1.5.A Handle Customer Registration Flow Submission
+                if (
+                    interactive_payload.get("flow_type") == "customer_registration"
+                    or ("customer_name" in interactive_payload and "template_select" not in interactive_payload and "order_type_select" not in interactive_payload)
+                ):
+                    raw_name = interactive_payload.get("customer_name")
+                    phone = interactive_payload.get("customer_phone") or ""
+                    address = interactive_payload.get("customer_address") or ""
+                    from src.agents.single_agent import sanitize_customer_name
+                    clean_name = sanitize_customer_name(raw_name)
+                    if clean_name:
+                        cid = db_service.create_customer_if_not_exists(clean_name, phone=phone, address=address)
+                        confirm_reply = (
+                            f"✅ *Customer Added Successfully!*\n\n"
+                            f"• *Name:* {clean_name}\n"
+                            f"• *Customer ID:* {cid}\n"
+                            f"• *Phone:* {phone or 'Not provided'}\n"
+                            f"• *Location:* {address or 'Not provided'}\n\n"
+                            f"Saved to 'Customers' in Google Sheets. 👍\n"
+                            f"Reply *'Hi'* for main menu or *'1'* to start a new order."
+                        )
+                    else:
+                        confirm_reply = "⚠️ Invalid customer name provided. Please reply with a valid name."
+                    print(f"[FAST-PATH] Customer registration completed for {clean_name}")
+                    whatsapp_service.send_text_message(sender_phone, confirm_reply)
+                    memory_service.clear_state(sender_phone)
+                    return
+
+                # 1.5.B Handle Order Creation / Edit Flow Submission
                 # 1. Customer Name Resolution
                 selected_cust = interactive_payload.get("customer_select")
                 new_cust = interactive_payload.get("new_customer_name")
@@ -352,6 +381,36 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                  else:
                      whatsapp_service.send_text_message(sender_phone, "Error: Flow ID missing from config.")
                  memory_service.save_state(sender_phone, rebuilt_state)
+            elif rebuilt_state.send_customer_form:
+                  # Trigger native WhatsApp Customer Registration Flow
+                  config_vars = db_service.get_config_variables()
+                  cust_flow_id = (
+                      str(config_vars.get("WhatsApp Customer Flow ID") or config_vars.get("WHATSAPP_CUSTOMER_FLOW_ID") or "").strip()
+                      or os.getenv("WHATSAPP_CUSTOMER_FLOW_ID")
+                      or "1347920890757319"
+                  )
+                  msg_text = rebuilt_state.final_reply or "Please fill out the customer registration form below, Boss:"
+                  header_text = "New Customer"
+                  if cust_flow_id:
+                      sent = whatsapp_service.send_flow_message(
+                          sender_phone,
+                          cust_flow_id,
+                          message_text=msg_text,
+                          screen_data={"init_name": "", "init_phone": "", "init_address": ""},
+                          header_text=header_text,
+                          flow_cta="Open Form",
+                          initial_screen="CUSTOMER_SCREEN"
+                      )
+                      if not sent:
+                          whatsapp_service.send_text_message(
+                              sender_phone,
+                              "👤 *Add New Customer*\n"
+                              "Boss, please reply with the customer details:\n"
+                              "*Format:* Customer Name, Phone (optional), Address (optional)"
+                          )
+                  else:
+                      whatsapp_service.send_text_message(sender_phone, "Error: Customer Flow ID missing from config.")
+                  memory_service.save_state(sender_phone, rebuilt_state)
             elif rebuilt_state.is_missing_info:
                  # Bot needs more info (from Collector worker)
                  whatsapp_service.send_text_message(sender_phone, rebuilt_state.missing_fields_prompt)

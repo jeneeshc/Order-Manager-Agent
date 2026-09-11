@@ -29,13 +29,23 @@ class WhatsAppService:
         except Exception as e:
             print(f"[WhatsApp] Failed to send message: {e}")
             return False
-    def send_flow_message(self, recipient_number: str, flow_id: str, message_text: str = "Please fill out the form below to proceed:", flow_token: str = None, screen_data: dict = None, header_text: str = None):
+    def send_flow_message(
+        self,
+        recipient_number: str,
+        flow_id: str,
+        message_text: str = "Please fill out the form below to proceed:",
+        flow_token: str = None,
+        screen_data: dict = None,
+        header_text: str = None,
+        initial_screen: str = "ORDER_SCREEN",
+        flow_cta: str = "Open Form"
+    ):
         """Sends an interactive WhatsApp Flow message, optionally passing screen_data for pre-population."""
         import time
-        unique_token = flow_token or f"CJS_ORDER_{int(time.time())}"
+        unique_token = flow_token or f"CJS_FLOW_{int(time.time())}"
         
         flow_action_payload = {
-            "screen": "ORDER_SCREEN"
+            "screen": initial_screen or "ORDER_SCREEN"
         }
         if screen_data:
             flow_action_payload["data"] = screen_data
@@ -62,7 +72,7 @@ class WhatsAppService:
                         "flow_message_version": "3",
                         "flow_token": unique_token,
                         "flow_id": flow_id,
-                        "flow_cta": "Open Form",
+                        "flow_cta": flow_cta or "Open Form",
                         "flow_action": "navigate",
                         "flow_action_payload": flow_action_payload
                     }
