@@ -676,9 +676,9 @@ class GoogleSheetsService:
             return None
             
         name = name.strip()
-        # Verify name is valid (not a placeholder like Unknown)
+        # Verify name is valid (not a placeholder like Unknown, and not purely numeric like a menu choice)
         name_lower = name.lower()
-        if name_lower in {"unknown", "none", "unknown name", "new customer", "unknown customer", "n/a", "null", "undefined", ""}:
+        if name.isdigit() or name_lower in {"unknown", "none", "unknown name", "new customer", "unknown customer", "n/a", "null", "undefined", ""}:
             return None
             
         # 1. Look up existing customer

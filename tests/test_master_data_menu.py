@@ -6,9 +6,10 @@ from src.services.sheets import GoogleSheetsService
 
 @pytest.fixture
 def collector():
-    with patch("src.agents.agent_1_collector.ChatGoogleGenerativeAI"):
+    with patch("src.agents.single_agent.ChatGoogleGenerativeAI"), \
+         patch("src.agents.agent_6_secretary.ChatGoogleGenerativeAI"):
         agent = OrderCollectorAgent()
-        return agent
+        yield agent
 
 def test_menu_option_6_add_customer_flow(collector):
     # Step 1: Boss sends '6' from main menu

@@ -311,3 +311,137 @@ def test_supervisor_routes_menu_to_end_without_guardrail():
     )
     result2 = supervisor.process(state2)
     assert result2.next_step == "END"
+
+
+def test_order_edit_selection_option_6_does_not_trigger_add_customer(mock_sheets_service):
+    """
+    Regression test: Replying '6' when choosing among active orders to edit
+    must select the 6th order and launch the form, NOT trigger 'Add New Customer'.
+    """
+    mock_sheets_service.get_active_orders_summary.return_value = [
+        {"order_id": "CJS-0365BF", "customer": "Ammu", "template": "Baptism", "quantity": 1, "delivery_date": "2026-09-09", "machine": "Aakruthi"},
+        {"order_id": "CJS-56CFB0", "customer": "Anna Maria", "template": "Baptism", "quantity": 1, "delivery_date": "2026-09-10", "machine": "Aakruthi"},
+        {"order_id": "CJS-2FA5FE", "customer": "Amala", "template": "Baptism", "quantity": 1, "delivery_date": "2026-09-11", "machine": "Aakruthi"},
+        {"order_id": "CJS-08EE7B", "customer": "Amala", "template": "Baptism", "quantity": 1, "delivery_date": "2026-09-12", "machine": "Aakruthi"},
+        {"order_id": "CJS-ECC3BE", "customer": "Amala", "template": "Baptism", "quantity": 1, "delivery_date": "2026-09-14", "machine": "Aakruthi"},
+        {"order_id": "CJS-D12F99", "customer": "Ammu", "template": "Baptism", "quantity": 1, "delivery_date": "2026-09-15", "machine": "Aakruthi"},
+    ]
+    collector = OrderCollectorAgent()
+
+    # User replies '6' while in SELECT_ORDER_FOR_EDIT
+    state = AgentState(raw_message="6", active_menu="SELECT_ORDER_FOR_EDIT")
+    result = collector.process(state)
+
+    # Must open order form for CJS-D12F99
+    assert result.send_order_form is True
+    assert result.editing_order_id == "CJS-D12F99"
+    assert result.active_menu is None
+    assert "CJS-D12F99" in result.final_reply
+    assert "Add New Customer" not in result.final_reply
+
+
+def test_order_edit_selection_invalid_number_reprompts_and_does_not_trigger_main_menu(mock_sheets_service):
+    """
+    If there are 6 orders and user replies '7' or '9', it must reprompt within SELECT_ORDER_FOR_EDIT,
+    and NOT trigger Option 7 (Add Template) or Option 9 (Sync backend).
+    """
+    mock_sheets_service.get_active_orders_summary.return_value = [
+        {"order_id": "CJS-001", "customer": "Ammu", "template": "Baptism"},
+        {"order_id": "CJS-002", "customer": "Anna", "template": "Baptism"},
+    ]
+    collector = OrderCollectorAgent()
+
+    # User replies '7' while only 2 orders exist
+    state = AgentState(raw_message="7", active_menu="SELECT_ORDER_FOR_EDIT")
+    result = collector.process(state)
+
+    assert result.active_menu == "SELECT_ORDER_FOR_EDIT"
+    assert "valid number (1-2)" in result.final_reply
+    assert "Add New Template" not in result.final_reply
+    assert "Backend & WhatsApp Synced" not in result.final_reply
+
+
+def test_adjust_submenu_rejects_main_menu_numbers():
+    """Replying '6' while in ADJUST menu must NOT trigger 'Add New Customer'."""
+    collector = OrderCollectorAgent()
+    state = AgentState(raw_message="6", active_menu="ADJUST")
+    result = collector.process(state)
+
+    assert result.active_menu == "ADJUST"
+    assert "valid option (1-4)" in result.final_reply
+    assert "Add New Customer" not in result.final_reply
+
+
+def test_invoicing_submenu_rejects_main_menu_numbers():
+    """Replying '6' while in INVOICING menu must NOT trigger 'Add New Customer'."""
+    collector = OrderCollectorAgent()
+    state = AgentState(raw_message="6", active_menu="INVOICING")
+    result = collector.process(state)
+
+    assert result.active_menu == "INVOICING"
+    assert "valid option (1-4)" in result.final_reply
+    assert "Add New Customer" not in result.final_reply
+
+
+def test_vendors_submenu_rejects_main_menu_numbers():
+    """Replying '6' while in VENDORS menu must NOT trigger 'Add New Customer'."""
+    collector = OrderCollectorAgent()
+    state = AgentState(raw_message="6", active_menu="VENDORS")
+    result = collector.process(state)
+
+    assert result.active_menu == "VENDORS"
+    assert "valid option (1-2)" in result.final_reply
+    assert "Add New Customer" not in result.final_reply
+
+
+def test_input_new_customer_rejects_numeric_input(mock_sheets_service):
+    """
+    Regression test: Replying '1' or '6' while in INPUT_NEW_CUSTOMER must NOT
+    create a customer named '1' or '6' in Google Sheets.
+    """
+    collector = OrderCollectorAgent()
+    state = AgentState(raw_message="1", active_menu="INPUT_NEW_CUSTOMER")
+    result = collector.process(state)
+
+    assert result.active_menu == "INPUT_NEW_CUSTOMER"
+    assert "valid customer name" in result.final_reply
+    assert "number alone" in result.final_reply
+    mock_sheets_service.create_customer_if_not_exists.assert_not_called()
+
+
+def test_input_new_customer_accepts_valid_name(mock_sheets_service):
+    """Replying with a valid customer string registers the customer."""
+    mock_sheets_service.create_customer_if_not_exists.return_value = "1018"
+    collector = OrderCollectorAgent()
+    state = AgentState(raw_message="Priya Boutique, 9876543210, Ernakulam", active_menu="INPUT_NEW_CUSTOMER")
+    result = collector.process(state)
+
+    assert result.active_menu is None
+    assert "Customer Added Successfully!" in result.final_reply
+    assert "Priya Boutique" in result.final_reply
+    mock_sheets_service.create_customer_if_not_exists.assert_called_once_with(
+        "Priya Boutique", phone="9876543210", address="Ernakulam"
+    )
+
+
+def test_input_new_template_rejects_numeric_input(mock_sheets_service):
+    """Replying with just a digit while adding a template must be rejected."""
+    collector = OrderCollectorAgent()
+    state = AgentState(raw_message="1", active_menu="INPUT_NEW_TEMPLATE")
+    result = collector.process(state)
+
+    assert result.active_menu == "INPUT_NEW_TEMPLATE"
+    assert "valid template name" in result.final_reply
+    mock_sheets_service.create_template_if_not_exists.assert_not_called()
+
+
+def test_input_new_order_type_rejects_numeric_input():
+    """Replying with just a digit while adding an order type must be rejected."""
+    collector = OrderCollectorAgent()
+    state = AgentState(raw_message="1", active_menu="INPUT_NEW_ORDER_TYPE")
+    result = collector.process(state)
+
+    assert result.active_menu == "INPUT_NEW_ORDER_TYPE"
+    assert "valid order type name" in result.final_reply
+
+
