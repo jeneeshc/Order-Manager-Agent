@@ -13,7 +13,7 @@ MAIN_MENU_TEXT = (
     "Hello Boss! How can I assist you today? Please reply with a number:\n\n"
     "1️⃣ *New Order Form* (Open Clean Order Intake Form)\n"
     "2️⃣ *Adjust Existing Order* (Select an active order to edit in WhatsApp Form)\n"
-    "3️⃣ *Invoicing & Billing* (Pending Invoices, Mark Invoiced/Paid, Debtors)\n"
+    "3️⃣ *Pending Invoicing* (Completed orders awaiting bill per customer)\n"
     "4️⃣ *Daily Briefing & Tasks* (Today's summary, queues, and reminders)\n"
     "5️⃣ *Vendors & Expenses* (View suppliers or recent cash outflows)\n"
     "6️⃣ *Add New Customer* (Register a customer in Google Sheets)\n"
@@ -482,90 +482,6 @@ class CJSSingleAgent:
                 state.final_reply = f"Boss, please reply with a valid number (1-{len(orders)}) or Order ID from the list above, or '0' for main menu."
                 return state
 
-        # Sub-menu: INVOICING (Option 3 sub-menu)
-        if state.active_menu == "INVOICING":
-            if raw_msg in ("1", "31") or ("pending invoice" in msg_lower):
-                state.is_pending_invoicing_query = True
-                state.active_menu = None
-                state.next_step = "END"
-                pending = self.db.get_orders_pending_invoicing()
-                if not pending:
-                    state.final_reply = "Boss, all completed orders have been invoiced! No pending orders. 🎉"
-                else:
-                    lines = ["📋 *Pending Invoices*\n"]
-                    for cname, ords in sorted(pending.items()):
-                        total_amount = 0.0
-                        for o in ords:
-                            cost_str = str(o.get("cost", "0")).replace("Rs", "").replace("₹", "").replace(",", "").strip()
-                            try:
-                                total_amount += float(cost_str)
-                            except ValueError:
-                                pass
-                        amt_display = f"Rs {int(total_amount):,}" if total_amount.is_integer() else f"Rs {total_amount:,.2f}"
-                        lines.append(f"• *{cname}* — {amt_display}")
-                    state.final_reply = "\n".join(lines)
-                return state
-            elif raw_msg in ("2", "32"):
-                orders, prompt_text = render_active_orders_prompt("📋 *Select Order to Mark as Invoiced:*", self.db)
-                if not orders:
-                    state.active_menu = None
-                    state.final_reply = prompt_text
-                    return state
-                state.active_menu = "SELECT_ORDER_TO_INVOICE"
-                state.final_reply = prompt_text
-                return state
-            elif raw_msg in ("3", "33"):
-                orders, prompt_text = render_active_orders_prompt("✅ *Select Order to Mark as Completed / Paid:*", self.db)
-                if not orders:
-                    state.active_menu = None
-                    state.final_reply = prompt_text
-                    return state
-                state.active_menu = "SELECT_ORDER_TO_COMPLETE"
-                state.final_reply = prompt_text
-                return state
-            elif raw_msg in ("4", "34") or ("debtor" in msg_lower):
-                state.is_payment_query = True
-                state.active_menu = None
-                state.next_step = "END"
-                pending_payments = self.db.get_pending_payments()
-                if not pending_payments:
-                    state.final_reply = "Boss, there are no outstanding debtors or unpaid completed orders right now! 💵"
-                else:
-                    lines = ["💰 *Pending Dues & Debtors Report*\n"]
-                    for display_key, orders in pending_payments.items():
-                        lines.append(f"👤 *{display_key}*:")
-                        for o in orders:
-                            lines.append(f"  • *{o['order_id']}* — Due: {o.get('cost', 'Rs 0')}")
-                    state.final_reply = "\n".join(lines)
-                return state
-            else:
-                state.final_reply = "Boss, please select a valid option (1-4) from the Invoicing menu, or reply '0' for the main menu."
-                return state
-
-        if state.active_menu == "SELECT_ORDER_TO_INVOICE":
-            orders = self.db.get_active_orders_summary(limit=10)
-            target_id = resolve_selected_order(raw_msg, orders)
-            if target_id:
-                self.db.update_order_status(target_id, "Invoiced")
-                state.active_menu = None
-                state.final_reply = f"✅ *Status Updated!*\nOrder *{target_id}* has been marked as *Invoiced*. 📋"
-                return state
-            else:
-                state.final_reply = f"Boss, please reply with a valid number (1-{len(orders)}) or Order ID from the list above, or '0' for main menu."
-                return state
-
-        if state.active_menu == "SELECT_ORDER_TO_COMPLETE":
-            orders = self.db.get_active_orders_summary(limit=10)
-            target_id = resolve_selected_order(raw_msg, orders)
-            if target_id:
-                self.db.update_order_status(target_id, "Completed")
-                state.active_menu = None
-                state.final_reply = f"✅ *Status Updated!*\nOrder *{target_id}* has been marked as *Completed*. 📋"
-                return state
-            else:
-                state.final_reply = f"Boss, please reply with a valid number (1-{len(orders)}) or Order ID from the list above, or '0' for main menu."
-                return state
-
         # Sub-menu: VENDORS (Option 5 sub-menu)
         if state.active_menu == "VENDORS":
             if raw_msg in ("1", "51"):
@@ -684,13 +600,11 @@ class CJSSingleAgent:
             state.final_reply = prompt_text
             return state
 
-        # Option 3: Invoicing Menu / Codes 31-34
-        if raw_msg == "3" and state.active_menu in ("MAIN", None):
-            state.active_menu = "INVOICING"
-            state.final_reply = INVOICING_MENU_TEXT
-            return state
-
-        if (raw_msg == "31" and state.active_menu in ("MAIN", None)) or ("pending invoice" in msg_lower and state.active_menu in ("MAIN", None)):
+        # Option 3: Pending Invoicing (Direct report per customer, no sub-menu)
+        if (
+            (raw_msg in {"3", "31"} and state.active_menu in ("MAIN", None))
+            or (("pending invoice" in msg_lower or "pending invoicing" in msg_lower) and state.active_menu in ("MAIN", None))
+        ):
             state.is_pending_invoicing_query = True
             state.active_menu = None
             state.next_step = "END"
@@ -710,26 +624,6 @@ class CJSSingleAgent:
                     amt_display = f"Rs {int(total_amount):,}" if total_amount.is_integer() else f"Rs {total_amount:,.2f}"
                     lines.append(f"• *{cname}* — {amt_display}")
                 state.final_reply = "\n".join(lines)
-            return state
-
-        if raw_msg == "32" and state.active_menu in ("MAIN", None):
-            orders, prompt_text = render_active_orders_prompt("📋 *Select Order to Mark as Invoiced:*", self.db)
-            if not orders:
-                state.active_menu = None
-                state.final_reply = prompt_text
-                return state
-            state.active_menu = "SELECT_ORDER_TO_INVOICE"
-            state.final_reply = prompt_text
-            return state
-
-        if raw_msg == "33" and state.active_menu in ("MAIN", None):
-            orders, prompt_text = render_active_orders_prompt("✅ *Select Order to Mark as Completed / Paid:*", self.db)
-            if not orders:
-                state.active_menu = None
-                state.final_reply = prompt_text
-                return state
-            state.active_menu = "SELECT_ORDER_TO_COMPLETE"
-            state.final_reply = prompt_text
             return state
 
         if (raw_msg == "34" and state.active_menu in ("MAIN", None)) or ("debtor" in msg_lower and state.active_menu in ("MAIN", None)):
@@ -897,7 +791,7 @@ Guidelines:
 - If Boss is greeting (saying hi, hello, etc.), output the full Main Menu:
 1️⃣ New Order Form
 2️⃣ Adjust Existing Order (WhatsApp Form edit)
-3️⃣ Invoicing & Billing
+3️⃣ Pending Invoicing (Completed orders awaiting bill per customer)
 4️⃣ Daily Briefing & Tasks
 5️⃣ Vendors & Expenses
 6️⃣ Add New Customer
@@ -906,8 +800,9 @@ Guidelines:
 9️⃣ Sync with Back-end (Refresh WhatsApp Form)
 - If Boss wants to modify/edit an active order, suggest replying '2' (Adjust Existing Order).
 - If Boss is asking about placing an order, suggest replying '1' to open the instant WhatsApp Order Form.
+- If Boss is asking about pending invoices or bills, summarize or suggest replying '3'.
 - If Boss is asking what to do today or wants a schedule summary, suggest replying '4' for the 5-Pillar Daily Briefing.
-- If Boss is asking about invoices or payments, summarize or suggest replying '3'.
+- If Boss wants to view vendors or cash outflows, suggest replying '5'.
 - If Boss wants to register a client or template, suggest replying '6' (Add Customer) or '7' (Add Template).
 - If Boss wants to sync or refresh backend/forms/Google Sheets, suggest replying '9' (Sync with Back-end).
 - If Boss asks a general question, answer helpfully directly.

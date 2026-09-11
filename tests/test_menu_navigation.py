@@ -72,7 +72,7 @@ def test_greeting_triggers_main_menu(mock_sheets_service):
         assert "CJS Designs — Order Manager" in result.final_reply
         assert "1️⃣ *New Order Form*" in result.final_reply
         assert "2️⃣ *Adjust Existing Order*" in result.final_reply
-        assert "3️⃣ *Invoicing & Billing*" in result.final_reply
+        assert "3️⃣ *Pending Invoicing*" in result.final_reply
         assert "4️⃣ *Daily Briefing & Tasks*" in result.final_reply
         assert "5️⃣ *Vendors & Expenses*" in result.final_reply
 
@@ -107,15 +107,20 @@ def test_order_edit_form_selection(mock_sheets_service):
     assert result.flow_init_data["init_customer"] == "Shwetha"
     assert "Opening WhatsApp Form to edit Order *CJS-869BC6*" in result.final_reply
 
-def test_main_menu_option_3_invoicing_submenu(mock_sheets_service):
+def test_main_menu_option_3_pending_invoicing_direct(mock_sheets_service):
+    mock_sheets_service.get_orders_pending_invoicing.return_value = {
+        "Ammu": [{"order_id": "CJS-102", "cost": "Rs 2,000"}],
+        "Amala": [{"order_id": "CJS-104", "cost": "Rs 450"}],
+    }
     collector = OrderCollectorAgent()
     state = AgentState(raw_message="3", active_menu="MAIN")
     result = collector.process(state)
     
-    assert result.active_menu == "INVOICING"
-    assert "Invoicing & Billing Menu" in result.final_reply
-    assert "Pending Invoicing Report" in result.final_reply
-    assert "Mark Order as Invoiced" in result.final_reply
+    assert result.is_pending_invoicing_query is True
+    assert result.active_menu is None
+    assert "Pending Invoices" in result.final_reply
+    assert "• *Amala* — Rs 450" in result.final_reply
+    assert "• *Ammu* — Rs 2,000" in result.final_reply
 
 def test_main_menu_option_4_secretary_briefing(mock_sheets_service):
     collector = OrderCollectorAgent()
@@ -372,15 +377,16 @@ def test_adjust_submenu_rejects_main_menu_numbers():
     assert "Add New Customer" not in result.final_reply
 
 
-def test_invoicing_submenu_rejects_main_menu_numbers():
-    """Replying '6' while in INVOICING menu must NOT trigger 'Add New Customer'."""
+def test_option_3_has_no_submenu_and_completes_directly(mock_sheets_service):
+    """Option 3 must directly return pending invoices report with active_menu=None."""
+    mock_sheets_service.get_orders_pending_invoicing.return_value = {}
     collector = OrderCollectorAgent()
-    state = AgentState(raw_message="6", active_menu="INVOICING")
+    state = AgentState(raw_message="3", active_menu="MAIN")
     result = collector.process(state)
 
-    assert result.active_menu == "INVOICING"
-    assert "valid option (1-4)" in result.final_reply
-    assert "Add New Customer" not in result.final_reply
+    assert result.active_menu is None
+    assert result.is_pending_invoicing_query is True
+    assert "all completed orders have been invoiced" in result.final_reply
 
 
 def test_vendors_submenu_rejects_main_menu_numbers():
