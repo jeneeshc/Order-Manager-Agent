@@ -712,6 +712,22 @@ class GoogleSheetsService:
             ).execute()
             
             print(f"[SheetsAPI] Created new customer: ID={new_id}, Name='{name}'")
+            GoogleSheetsService._customer_map_cache = None
+
+            # Automatically trigger background flow redeployment so the new customer
+            # immediately appears in the next Order Form dropdown on WhatsApp!
+            try:
+                import threading
+                def _bg_redeploy():
+                    try:
+                        from scripts.deploy_flow import redeploy_order_flow
+                        redeploy_order_flow()
+                    except Exception as ex:
+                        print(f"[SheetsAPI] Background flow redeploy failed: {ex}")
+                threading.Thread(target=_bg_redeploy, daemon=True).start()
+            except Exception as e:
+                print(f"[SheetsAPI] Could not start bg redeploy: {e}")
+
             return new_id
             
         except Exception as e:
