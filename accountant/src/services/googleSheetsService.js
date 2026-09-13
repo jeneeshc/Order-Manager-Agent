@@ -239,29 +239,51 @@ class GoogleSheetsService {
   }
 
   async appendSaleToSheet(sale) {
-    const row = [
-      sale.date,
-      sale.id,
-      sale.customer,
-      sale.serviceType,
-      sale.totalStitches || 0,
-      sale.laborHours || 0,
-      sale.marginPercent || 0,
-      sale.netPrice || 0,
-      sale.gst || 0,
-      sale.courier || 0,
-      sale.grossTotal || 0
-    ];
+    // Send as a structured object so all fields (including imageUrl, orderRef) are persisted to Firestore
+    const rowData = {
+      id: sale.id,
+      'Invoice ID': sale.id,
+      date: sale.date,
+      'Date': sale.date,
+      customer: sale.customer,
+      'Customer': sale.customer,
+      customerPhone: sale.customerPhone || '',
+      customerAddress: sale.customerAddress || '',
+      serviceType: sale.serviceType,
+      'Service Type': sale.serviceType,
+      description: sale.description || '',
+      totalStitches: sale.totalStitches || 0,
+      'Total Stitches': sale.totalStitches || 0,
+      laborMinutes: sale.laborMinutes || 0,
+      'Labor Minutes': sale.laborMinutes || 0,
+      laborHours: sale.laborHours || 0,
+      'Labor Hrs': sale.laborHours || 0,
+      marginPercent: sale.marginPercent || 0,
+      'Margin %': sale.marginPercent || 0,
+      netPrice: sale.netPrice || 0,
+      'Net Price': sale.netPrice || 0,
+      gst: sale.gst || 0,
+      'GST': sale.gst || 0,
+      courier: sale.courier || 0,
+      'Courier': sale.courier || 0,
+      grossTotal: sale.grossTotal || 0,
+      'Gross Total': sale.grossTotal || 0,
+      status: sale.status || 'Paid',
+      imageUrl: sale.imageUrl || '',
+      'Image URL': sale.imageUrl || '',
+      orderRef: sale.orderRef || null,
+      'Order ID': sale.orderRef || null
+    };
 
     try {
       const res = await fetch('/api/sheets/append', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sheetName: 'Sales_Ledger', rowData: row })
+        body: JSON.stringify({ sheetName: 'Sales_Ledger', rowData })
       });
       if (res.ok) return true;
     } catch (e) {
-      console.warn('Error syncing sale to Google Sheet:', e);
+      console.warn('Error syncing sale to Firestore:', e);
     }
     return false;
   }

@@ -422,6 +422,28 @@ export default function OrdersManager({ onGenerateInvoice }) {
                             <Info size={13} />
                           </button>
                         )}
+                        {order.imageUrl && (
+                          <a
+                            href={order.imageUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="View design artwork"
+                            style={{ display: 'block', marginTop: '6px' }}
+                          >
+                            <img
+                              src={order.imageUrl}
+                              alt="Design"
+                              style={{
+                                width: '52px',
+                                height: '52px',
+                                objectFit: 'cover',
+                                borderRadius: '6px',
+                                border: '1px solid rgba(245, 158, 11, 0.3)',
+                                opacity: isCancelled ? 0.5 : 1
+                              }}
+                            />
+                          </a>
+                        )}
                       </td>
 
                       {/* Date & Delivery Target */}
