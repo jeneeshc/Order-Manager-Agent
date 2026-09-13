@@ -189,6 +189,9 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                         import re
                         match = re.search(r'\b(CJS-[A-Za-z0-9]+)\b', text_body, re.I)
                         target_order_id = match.group(1).upper() if match else None
+                        if not target_order_id:
+                            # Auto-fallback: check if the user recently created an order
+                            target_order_id = memory_service.get_recent_order(sender_phone)
 
                         if target_order_id:
                             order_data = db_service.get_order(target_order_id)
@@ -424,6 +427,8 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                     )
                     if initial_state.image_url:
                         confirm_reply += f"\n* Design Image: {initial_state.image_url}"
+                    else:
+                        confirm_reply += "\n\n📸 *Tip:* To attach a design photo, simply send the image directly in this chat!"
 
                     print(f"[FAST-PATH] Sending customer-forwardable confirmation to {sender_phone} for {order_id}")
                     # 1. ALWAYS send the text confirmation first so the user reliably gets the estimate instantly
@@ -437,6 +442,8 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                             caption=f"Design Image for Order {order_id}"
                         )
 
+                    # Track recent order ID for seamless standalone photo attachment
+                    memory_service.set_recent_order(sender_phone, order_id)
                     memory_service.clear_state(sender_phone)
                     return
 
@@ -450,7 +457,7 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                  flow_id = (
                      str(config_vars.get("WhatsApp Flow ID") or config_vars.get("WHATSAPP_FLOW_ID") or "").strip()
                      or os.getenv("WHATSAPP_FLOW_ID")
-                     or "2113819249528233"
+                     or "1076000228508888"
                  )
                  msg_text = rebuilt_state.final_reply or "Please fill out the order form below, Boss:"
                  header_text = f"Edit Order {rebuilt_state.editing_order_id}" if rebuilt_state.editing_order_id else "Order Creation"
@@ -571,6 +578,16 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks = N
                             s_errors = status.get("errors")
                             if s_errors or s_status in ("failed", "undelivered"):
                                 print(f"[WHATSAPP STATUS ERROR] id={s_id}, status={s_status}, errors={s_errors}")
+                                recipient = status.get("recipient_id")
+                                if recipient and s_errors:
+                                    for err in s_errors:
+                                        if err.get("code") == 131052:
+                                            whatsapp_service.send_text_message(
+                                                recipient,
+                                                "⚠️ *Photo Upload Limit Exceeded*\n\n"
+                                                "The photo attached in the form could not be processed by WhatsApp (exceeded image size or unsupported format).\n\n"
+                                                "👉 *Please tap '1' to open the form, submit without attaching a photo, then send the photo directly in this chat!* 👍"
+                                            )
 
                     if "errors" in value:
                         print(f"[WHATSAPP VALUE ERROR] errors={value['errors']}")

@@ -187,12 +187,12 @@ def build_flow_json() -> dict:
                                 {
                                     "type": "PhotoPicker",
                                     "name": "photo_picker",
-                                    "label": "Design / Embroidery Image",
-                                    "description": "Upload from gallery or capture with camera (Optional)",
+                                    "label": "Design Image (Max 5MB, Optional)",
+                                    "description": "Or leave empty & send photo in chat (Optional)",
                                     "photo-source": "camera_gallery",
                                     "min-uploaded-photos": 0,
                                     "max-uploaded-photos": 1,
-                                    "max-file-size-kb": 25600
+                                    "max-file-size-kb": 5120
                                 }
                             ]
                         },

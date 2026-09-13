@@ -47,3 +47,12 @@ class MemoryService:
         if sender_phone in self.active_sessions:
             del self.active_sessions[sender_phone]
             self._save_to_disk()
+
+    def get_recent_order(self, sender_phone: str) -> Optional[str]:
+        """Returns the order_id of the most recently created order for this phone."""
+        return self.active_sessions.get(f"recent_order_{sender_phone}")
+
+    def set_recent_order(self, sender_phone: str, order_id: str):
+        """Stores the most recently created order_id for automatic image attachment."""
+        self.active_sessions[f"recent_order_{sender_phone}"] = order_id
+        self._save_to_disk()
