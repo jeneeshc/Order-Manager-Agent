@@ -154,6 +154,8 @@ app.get('/api/sheets/bootstrap', async (req, res) => {
     // Format sales
     const sales = salesSnap.docs.map(d => {
       const data = d.data();
+      const lHrs = Number(data.labor_hrs || data.labor_hours || 0);
+      const lMins = data.labor_minutes !== undefined ? Number(data.labor_minutes) : Math.round(lHrs * 60);
       return {
         id: data.invoice_id || d.id,
         'Invoice ID': data.invoice_id || d.id,
@@ -165,8 +167,10 @@ app.get('/api/sheets/bootstrap', async (req, res) => {
         'Service Type': data.service_type || '',
         totalStitches: data.total_stitches || 0,
         'Total Stitches': data.total_stitches || 0,
-        laborHours: data.labor_hrs || 0,
-        'Labor Hrs': data.labor_hrs || 0,
+        laborHours: lHrs,
+        'Labor Hrs': lHrs,
+        laborMinutes: lMins,
+        'Labor Minutes': lMins,
         marginPercent: data.margin_pct || 0,
         'Margin %': data.margin_pct || 0,
         netPrice: data.net_price || 0,
@@ -177,7 +181,9 @@ app.get('/api/sheets/bootstrap', async (req, res) => {
         'Courier': data.courier || 0,
         grossTotal: data.gross_total || 0,
         'Gross Total': data.gross_total || 0,
-        status: data.status || 'Paid'
+        status: data.status || 'Paid',
+        imageUrl: data.image_url || data.imageUrl || '',
+        'Image URL': data.image_url || data.imageUrl || ''
       };
     });
 
@@ -236,6 +242,8 @@ app.get('/api/sheets/bootstrap', async (req, res) => {
     // Format orders
     const orders = ordersSnap.docs.map(d => {
       const data = d.data();
+      const lHrs = Number(data.labor_hours || 0);
+      const lMins = data.labor_minutes !== undefined ? Number(data.labor_minutes) : Math.round(lHrs * 60);
       return {
         id: data.order_id || d.id,
         'Order ID': data.order_id || d.id,
@@ -255,8 +263,10 @@ app.get('/api/sheets/bootstrap', async (req, res) => {
         'Quantity': data.quantity || 1,
         stitchCount: data.stitch_count || 0,
         'Stitch Count': data.stitch_count || 0,
-        laborHours: data.labor_hours || 0,
-        'Labor Hours': data.labor_hours || 0,
+        laborHours: lHrs,
+        'Labor Hours': lHrs,
+        laborMinutes: lMins,
+        'Labor Minutes': lMins,
         machine: data.machine || 'None',
         'Machine': data.machine || 'None',
         estimatedDeliveryDate: data.estimated_delivery_date || '',
@@ -343,6 +353,8 @@ app.get('/api/sheets/orders', async (req, res) => {
         'Quantity': data.quantity || 1,
         'Stitch Count': data.stitch_count || 0,
         'Labor Hours': data.labor_hours || 0,
+        'Labor Minutes': data.labor_minutes !== undefined ? Number(data.labor_minutes) : Math.round(Number(data.labor_hours || 0) * 60),
+        laborMinutes: data.labor_minutes !== undefined ? Number(data.labor_minutes) : Math.round(Number(data.labor_hours || 0) * 60),
         'Machine': data.machine || '',
         'Estimated Delivery Date': data.estimated_delivery_date || '',
         'Estimated Cost': data.estimated_cost || '',

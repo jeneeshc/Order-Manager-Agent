@@ -220,20 +220,27 @@ class StorageService {
     }
 
     if (Array.isArray(sales) && sales.length > 0) {
-      const mappedSales = sales.map(s => ({
-        id: s['Invoice ID'] || s.id,
-        date: s['Date'] || s.date,
-        customer: s['Customer'] || s.customer,
-        serviceType: s['Service Type'] || s.serviceType,
-        totalStitches: parseInteger(s['Total Stitches'] || s.totalStitches || 0),
-        laborHours: parseCurrency(s['Labor Hrs'] || s.laborHours || 0),
-        marginPercent: parseCurrency(s['Margin %'] || s.marginPercent || 0),
-        netPrice: parseCurrency(s['Net Price'] || s.netPrice || 0),
-        gst: parseCurrency(s['GST'] || s.gst || 0),
-        courier: parseCurrency(s['Courier'] || s.courier || 0),
-        grossTotal: parseCurrency(s['Gross Total'] || s.grossTotal || 0),
-        status: s.status || 'Paid'
-      }));
+      const mappedSales = sales.map(s => {
+        const lHrs = parseCurrency(s['Labor Hrs'] || s.laborHours || 0);
+        const lMins = s['Labor Minutes'] !== undefined ? parseInteger(s['Labor Minutes']) : (s.laborMinutes !== undefined ? parseInteger(s.laborMinutes) : Math.round(lHrs * 60));
+        return {
+          id: s['Invoice ID'] || s.id,
+          date: s['Date'] || s.date,
+          customer: s['Customer'] || s.customer,
+          serviceType: s['Service Type'] || s.serviceType,
+          totalStitches: parseInteger(s['Total Stitches'] || s.totalStitches || 0),
+          laborHours: lHrs,
+          laborMinutes: lMins,
+          marginPercent: parseCurrency(s['Margin %'] || s.marginPercent || 0),
+          netPrice: parseCurrency(s['Net Price'] || s.netPrice || 0),
+          gst: parseCurrency(s['GST'] || s.gst || 0),
+          courier: parseCurrency(s['Courier'] || s.courier || 0),
+          grossTotal: parseCurrency(s['Gross Total'] || s.grossTotal || 0),
+          status: s.status || 'Paid',
+          imageUrl: s['Image URL'] || s.imageUrl || s.image_url || '',
+          orderRef: s.orderRef || s['Order ID'] || s.orderId || null
+        };
+      });
       this.save(STORAGE_KEYS.SALES, mappedSales);
     }
 
@@ -296,6 +303,8 @@ class StorageService {
         }
 
         const orderType = o['Order Type'] || o['Embroidery Type'] || o.orderType || o.embroideryType || '';
+        const lHrs = parseFloat(o['Labor Hours'] || o.laborHours || 0) || 0;
+        const lMins = o['Labor Minutes'] !== undefined ? parseInteger(o['Labor Minutes']) : (o.laborMinutes !== undefined ? parseInteger(o.laborMinutes) : Math.round(lHrs * 60));
 
         return {
           id: o['Order ID'] || o.id || `ORD-${idx + 1}`,
@@ -306,7 +315,8 @@ class StorageService {
           orderType: orderType,
           templateName: o['Template Name'] || o.templateName || '',
           quantity: parseInteger(o['Quantity'] || o.quantity || 1) || 1,
-          laborHours: parseFloat(o['Labor Hours'] || o.laborHours || 0) || 0,
+          laborHours: lHrs,
+          laborMinutes: lMins,
           material: o['Material'] || o.material || '',
           embroideryType: orderType,
           stitchCount,
@@ -318,7 +328,8 @@ class StorageService {
           overrides: o['Overrides'] || o.overrides || '',
           overrideDeliveryDate: o['Override Delivery Date'] || o.overrideDeliveryDate || '',
           overrideCost: o['Override Cost (Rs)'] || o.overrideCost || '',
-          overrideMachine: o['Override Machine'] || o.overrideMachine || ''
+          overrideMachine: o['Override Machine'] || o.overrideMachine || '',
+          imageUrl: o['Image URL'] || o.imageUrl || o.image_url || ''
         };
       });
       this.save(STORAGE_KEYS.ORDERS, mappedOrders);

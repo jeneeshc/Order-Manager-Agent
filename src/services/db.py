@@ -311,6 +311,7 @@ class FirestoreDatabaseService:
                     "quantity": data.get("quantity", 1),
                     "stitch_count": data.get("stitch_count"),
                     "labor_hours": data.get("labor_hours", 0.0),
+                    "labor_minutes": int(round(float(data.get("labor_minutes") or (float(data.get("labor_hours", 0.0) or 0.0) * 60.0)))),
                     "machine_assigned": data.get("machine"),
                     "machine": data.get("machine"),
                     "completion_date": data.get("estimated_delivery_date"),
@@ -361,6 +362,14 @@ class FirestoreDatabaseService:
             else:
                 cost_str = f"Rs {round(float(total_cost_val), 2)}"
 
+            labor_mins_val = getattr(state, "labor_minutes", None)
+            if labor_mins_val is not None and float(labor_mins_val) > 0:
+                final_labor_mins = int(round(float(labor_mins_val)))
+                final_labor_hrs = round(final_labor_mins / 60.0, 2)
+            else:
+                final_labor_hrs = round(float(getattr(state, "labor_hours", 0.0) or 0.0), 2)
+                final_labor_mins = int(round(final_labor_hrs * 60.0))
+
             order_data = {
                 "order_date": datetime.datetime.now(IST).strftime("%Y-%m-%d %H:%M"),
                 "order_id": order_id,
@@ -371,7 +380,8 @@ class FirestoreDatabaseService:
                 "template_name": getattr(state, "template_name", "") or "",
                 "quantity": int(getattr(state, "quantity", 1) or 1),
                 "stitch_count": int(getattr(state, "stitch_count", 0) or 0),
-                "labor_hours": round(float(getattr(state, "labor_hours", 0.0) or 0.0), 2),
+                "labor_hours": final_labor_hrs,
+                "labor_minutes": final_labor_mins,
                 "machine": getattr(state, "machine_assigned", "None") or "None",
                 "estimated_delivery_date": getattr(state, "estimated_completion_date", None) or getattr(state, "requested_delivery_date", "") or "",
                 "estimated_cost": cost_str,
@@ -405,13 +415,25 @@ class FirestoreDatabaseService:
                 val = state.total_cost_rs
                 cost_str = f"Rs {int(val)}" if float(val).is_integer() else f"Rs {round(float(val), 2)}"
 
+            labor_mins_val = getattr(state, "labor_minutes", None)
+            if labor_mins_val is not None and float(labor_mins_val) > 0:
+                upd_labor_mins = int(round(float(labor_mins_val)))
+                upd_labor_hrs = round(upd_labor_mins / 60.0, 2)
+            elif state.labor_hours is not None:
+                upd_labor_hrs = float(state.labor_hours)
+                upd_labor_mins = int(round(upd_labor_hrs * 60.0))
+            else:
+                upd_labor_hrs = existing.get("labor_hours")
+                upd_labor_mins = existing.get("labor_minutes", int(round((upd_labor_hrs or 0.0) * 60.0)))
+
             updates = {
                 "customer_name": state.customer_name or existing.get("customer_name"),
                 "order_type": state.order_type or existing.get("order_type"),
                 "template_name": state.template_name or existing.get("template_name"),
                 "quantity": int(state.quantity) if state.quantity else existing.get("quantity"),
                 "stitch_count": int(state.stitch_count) if state.stitch_count else existing.get("stitch_count"),
-                "labor_hours": float(state.labor_hours) if state.labor_hours is not None else existing.get("labor_hours"),
+                "labor_hours": upd_labor_hrs,
+                "labor_minutes": upd_labor_mins,
                 "machine": state.machine_assigned or existing.get("machine"),
                 "estimated_delivery_date": state.estimated_completion_date or state.requested_delivery_date or existing.get("estimated_delivery_date"),
                 "estimated_cost": cost_str,
@@ -531,11 +553,13 @@ class FirestoreDatabaseService:
                         "quantity": int(data.get("quantity", 1) or 1),
                         "stitch_count": int(data.get("stitch_count", 0) or 0),
                         "labor_hours": float(data.get("labor_hours", 0.0) or 0.0),
+                        "labor_minutes": int(round(float(data.get("labor_minutes") or (float(data.get("labor_hours", 0.0) or 0.0) * 60.0)))),
                         "machine": data.get("machine", "None"),
                         "delivery_date": data.get("estimated_delivery_date", "") or data.get("delivery_date", "") or data.get("completion_date", ""),
                         "cost": data.get("estimated_cost", "Rs 0") or data.get("cost", "Rs 0"),
                         "status": data.get("payment_status", "Estimated") or data.get("status", "Estimated"),
-                        "created_at": str(data.get("created_at") or data.get("order_date") or data.get("date") or "")
+                        "created_at": str(data.get("created_at") or data.get("order_date") or data.get("date") or ""),
+                        "image_url": data.get("image_url", "")
                     })
             active.sort(key=lambda x: x.get("created_at", ""), reverse=True)
             if limit and isinstance(limit, int):

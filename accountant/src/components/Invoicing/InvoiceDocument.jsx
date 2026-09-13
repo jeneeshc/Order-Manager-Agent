@@ -86,6 +86,15 @@ export default function InvoiceDocument({ invoice, onBack, onMarkPaid }) {
   const gstRate = parseFloat(config.gst_rate_percent) || 18;
   const isPaid = invoice.status === 'Paid';
 
+  // Resolve design reference image from invoice, linked order, or description regex
+  const orderImage = invoice.imageUrl ||
+    (invoice.orderRef ? storageService.getOrderById(invoice.orderRef)?.imageUrl : null) ||
+    (invoice.orderId ? storageService.getOrderById(invoice.orderId)?.imageUrl : null) ||
+    (() => {
+      const m = (invoice.description || '').match(/CJS-[A-Z0-9]+/i);
+      return m ? storageService.getOrderById(m[0])?.imageUrl : null;
+    })() || '';
+
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto' }}>
       {/* Top Action Toolbar (Hidden during Print) */}
@@ -153,7 +162,7 @@ export default function InvoiceDocument({ invoice, onBack, onMarkPaid }) {
       }}>
         <CheckCircle2 size={18} style={{ flexShrink: 0 }} />
         <span>
-          <strong>Confidentiality Verified:</strong> Internal metrics (Stitches: {invoice.totalStitches?.toLocaleString() || 0}, Labor: {invoice.laborHours || 0} hrs, Margin: {invoice.marginPercent || 0}%) are <strong>completely hidden</strong> on this customer invoice.
+          <strong>Confidentiality Verified:</strong> Internal metrics (Stitches: {invoice.totalStitches?.toLocaleString() || 0}, Labor: {invoice.laborMinutes ? `${invoice.laborMinutes} mins` : `${invoice.laborHours || 0} hrs`}, Margin: {invoice.marginPercent || 0}%) are <strong>completely hidden</strong> on this customer invoice.
         </span>
       </div>
 
@@ -301,11 +310,38 @@ export default function InvoiceDocument({ invoice, onBack, onMarkPaid }) {
             <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
               <td style={{ padding: '16px', verticalAlign: 'top', color: '#64748b', fontWeight: 600 }}>01</td>
               <td style={{ padding: '16px', verticalAlign: 'top' }}>
-                <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.98rem' }}>
-                  {invoice.serviceType}
-                </div>
-                <div style={{ fontSize: '0.88rem', color: '#475569', marginTop: '4px', lineHeight: 1.4 }}>
-                  {invoice.description || 'Custom embroidery craft and high-precision thread work.'}
+                <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                  {orderImage && (
+                    <div style={{ flexShrink: 0, textAlign: 'center' }}>
+                      <a href={orderImage} target="_blank" rel="noopener noreferrer" title="Click to view full size design artwork">
+                        <img 
+                          src={orderImage} 
+                          alt="Design Reference" 
+                          style={{ 
+                            width: '84px', 
+                            height: '84px', 
+                            objectFit: 'contain', 
+                            background: '#f8fafc',
+                            borderRadius: '8px', 
+                            border: '1px solid #cbd5e1',
+                            padding: '2px',
+                            display: 'block'
+                          }} 
+                        />
+                      </a>
+                      <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '4px', fontWeight: 600 }}>
+                        Design Ref
+                      </div>
+                    </div>
+                  )}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.98rem' }}>
+                      {invoice.serviceType}
+                    </div>
+                    <div style={{ fontSize: '0.88rem', color: '#475569', marginTop: '4px', lineHeight: 1.4 }}>
+                      {invoice.description || 'Custom embroidery craft and high-precision thread work.'}
+                    </div>
+                  </div>
                 </div>
               </td>
               <td style={{ textAlign: 'center', padding: '16px', verticalAlign: 'top', fontWeight: 600, color: '#0f172a' }}>

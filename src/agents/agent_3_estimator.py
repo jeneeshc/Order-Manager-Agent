@@ -82,24 +82,31 @@ class EstimationAgent:
             stitch_cost = round(((stitches * qty) / 1000.0) * base_rate, 2)
             stitches_display = f"{stitches} st x {qty} qty / 1000 x Rs {base_rate}"
 
-        # 2. Labor Cost (Converted from Labor Minutes to Hours)
+        # 2. Labor Cost (Calculated directly from minutes for precision)
         labor_hours = float(state.labor_hours or 0.0)
-        if getattr(state, "labor_minutes", None) and float(state.labor_minutes) > 0:
-            labor_hours = round(float(state.labor_minutes) / 60.0, 2)
+        labor_mins = float(getattr(state, "labor_minutes", 0.0) or 0.0)
+        if labor_mins > 0:
+            labor_hours = round(labor_mins / 60.0, 2)
             state.labor_hours = labor_hours
         elif labor_hours <= 0 and state.template_name:
             tmpl = db.get_template_by_name(state.template_name)
             if tmpl:
                 if tmpl.get("labor_minutes") or tmpl.get("default_labor_minutes"):
-                    lm = float(tmpl.get("labor_minutes") or tmpl.get("default_labor_minutes"))
-                    labor_hours = round(lm / 60.0, 2)
-                    state.labor_minutes = lm
+                    labor_mins = float(tmpl.get("labor_minutes") or tmpl.get("default_labor_minutes"))
+                    labor_hours = round(labor_mins / 60.0, 2)
+                    state.labor_minutes = labor_mins
                     state.labor_hours = labor_hours
                 elif tmpl.get("default_labor_hours"):
                     labor_hours = float(tmpl["default_labor_hours"])
+                    labor_mins = round(labor_hours * 60.0)
+                    state.labor_minutes = labor_mins
                     state.labor_hours = labor_hours
+        elif labor_hours > 0 and labor_mins <= 0:
+            labor_mins = round(labor_hours * 60.0)
+            state.labor_minutes = labor_mins
 
-        labor_cost = round(labor_hours * hourly_rate, 2)
+        effective_mins = labor_mins if labor_mins > 0 else (labor_hours * 60.0)
+        labor_cost = round((effective_mins / 60.0) * hourly_rate, 2)
 
         # 3. Base Production Cost
         base_cost = round(stitch_cost + labor_cost, 2)
@@ -127,7 +134,7 @@ class EstimationAgent:
         estimator_log = (
             f"\n[Estimator Agent]: Strict 4-Factor Cost Breakdown:\n"
             f"• Stitching Cost: {stitches_display} = Rs {stitch_cost}\n"
-            f"• Labor Cost: {labor_hours} hrs x Rs {hourly_rate}/hr = Rs {labor_cost}\n"
+            f"• Labor Cost: {int(effective_mins)} mins ({labor_hours} hrs) x Rs {hourly_rate}/hr = Rs {labor_cost}\n"
             f"• Base Production Cost: Rs {base_cost}\n"
             f"• Profit Margin ({profit_margin_pct}%): Rs {profit_amount}\n"
             f"• Subtotal: Rs {subtotal}\n"

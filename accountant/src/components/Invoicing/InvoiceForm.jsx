@@ -82,9 +82,17 @@ export default function InvoiceForm({ initialData, onSaveSuccess, onCancel }) {
   const [totalStitches, setTotalStitches] = useState(
     initialData?.totalStitches !== undefined ? initialData.totalStitches : 65000
   );
-  const [laborHours, setLaborHours] = useState(
-    initialData?.laborHours !== undefined ? initialData.laborHours : initialData?.laborHrs !== undefined ? initialData.laborHrs : 5
-  );
+  const [laborMinutes, setLaborMinutes] = useState(() => {
+    if (initialData?.laborMinutes !== undefined && initialData?.laborMinutes !== null && initialData?.laborMinutes !== '') {
+      return parseInteger(initialData.laborMinutes);
+    }
+    const hrs = initialData?.laborHours !== undefined ? initialData.laborHours : initialData?.laborHrs;
+    if (hrs !== undefined && hrs !== null && hrs !== '') {
+      return Math.round(parseCurrency(hrs) * 60);
+    }
+    return 60;
+  });
+  const [imageUrl, setImageUrl] = useState(initialData?.imageUrl || initialData?.['Image URL'] || '');
   const [marginPercent, setMarginPercent] = useState(
     initialData?.marginPercent !== undefined ? initialData.marginPercent : 25
   );
@@ -106,7 +114,7 @@ export default function InvoiceForm({ initialData, onSaveSuccess, onCancel }) {
   // Live Math calculations
   const effectiveStitches = serviceType === 'Machine Embroidery' ? parseInteger(totalStitches) : 0;
   const stitchCost = (effectiveStitches / 1000) * ratePer1000;
-  const laborCost = parseCurrency(laborHours) * hourlyRate;
+  const laborCost = (parseCurrency(laborMinutes) / 60.0) * hourlyRate;
   const baseCost = stitchCost + laborCost;
   const marginMultiplier = 1 + (parseCurrency(marginPercent) / 100);
   const netPrice = Number((baseCost * marginMultiplier).toFixed(2));
@@ -121,6 +129,9 @@ export default function InvoiceForm({ initialData, onSaveSuccess, onCancel }) {
       return;
     }
 
+    const effectiveLaborMins = parseInteger(laborMinutes) || 0;
+    const effectiveLaborHrs = Number((effectiveLaborMins / 60.0).toFixed(2));
+
     const saleRecord = {
       id,
       date,
@@ -130,7 +141,8 @@ export default function InvoiceForm({ initialData, onSaveSuccess, onCancel }) {
       serviceType,
       description: description.trim() || `${serviceType} Order`,
       totalStitches: effectiveStitches,
-      laborHours: parseCurrency(laborHours),
+      laborMinutes: effectiveLaborMins,
+      laborHours: effectiveLaborHrs,
       marginPercent: parseCurrency(marginPercent),
       netPrice,
       gst,
@@ -138,7 +150,8 @@ export default function InvoiceForm({ initialData, onSaveSuccess, onCancel }) {
       grossTotal,
       status,
       paymentDate: status === 'Paid' ? date : null,
-      orderRef: orderRef || null
+      orderRef: orderRef || null,
+      imageUrl: imageUrl || ''
     };
 
     // Save to local storage
@@ -346,7 +359,7 @@ export default function InvoiceForm({ initialData, onSaveSuccess, onCancel }) {
                             setTotalStitches(selectedTpl.stitchCount);
                           }
                           if (selectedTpl.laborMinutes > 0) {
-                            setLaborHours(parseFloat((selectedTpl.laborMinutes / 60).toFixed(2)));
+                            setLaborMinutes(selectedTpl.laborMinutes);
                           }
                         }
                         e.target.value = '';
@@ -376,6 +389,43 @@ export default function InvoiceForm({ initialData, onSaveSuccess, onCancel }) {
               </div>
             );
           })()}
+
+          {/* Order Design Reference Image Preview (if present) */}
+          {imageUrl && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '16px',
+              padding: '14px 18px',
+              background: 'rgba(245, 158, 11, 0.08)',
+              border: '1px solid rgba(245, 158, 11, 0.25)',
+              borderRadius: 'var(--radius-md)',
+              marginBottom: '20px'
+            }}>
+              <img
+                src={imageUrl}
+                alt="Order Design Reference"
+                style={{
+                  width: '64px',
+                  height: '64px',
+                  objectFit: 'contain',
+                  background: '#ffffff',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-subtle)',
+                  padding: '2px',
+                  flexShrink: 0
+                }}
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--accent-gold)' }}>
+                  Attached Design Image
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  This image reference is linked to this order and will appear on the final invoice document & printouts.
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Internal Metrics & Cost Inputs */}
           <div style={{
@@ -416,14 +466,14 @@ export default function InvoiceForm({ initialData, onSaveSuccess, onCancel }) {
               )}
 
               <div className="input-group" style={{ margin: 0 }}>
-                <label className="input-label">LABOR HOURS</label>
+                <label className="input-label">LABOR (MINUTES)</label>
                 <input
                   type="number"
                   min="0"
-                  step="0.5"
+                  step="1"
                   className="input-field"
-                  value={laborHours}
-                  onChange={(e) => setLaborHours(e.target.value)}
+                  value={laborMinutes}
+                  onChange={(e) => setLaborMinutes(e.target.value)}
                 />
               </div>
 

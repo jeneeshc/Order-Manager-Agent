@@ -100,6 +100,9 @@ export default function OrdersManager({ onGenerateInvoice }) {
     ].filter(Boolean);
     const descriptionText = (parts.length > 0 ? parts.join(' ') : 'Machine Embroidery') + ` (AI Order: ${order.id})`;
 
+    const lHrs = parseFloat(order.laborHours || 0) || 0;
+    const lMins = order.laborMinutes !== undefined ? order.laborMinutes : Math.round(lHrs * 60);
+
     return {
       orderId: order.id,
       customer: customerDisplayName,
@@ -108,9 +111,12 @@ export default function OrdersManager({ onGenerateInvoice }) {
       serviceType: order.orderType || 'Machine Embroidery',
       description: descriptionText,
       totalStitches: order.stitchCount || 0,
-      laborHrs: order.laborHours || 0,
+      laborMinutes: lMins,
+      laborHrs: lHrs,
+      laborHours: lHrs,
       estimatedCost: parseCurrency(order.estimatedCost),
-      status: 'Pending'
+      status: 'Pending',
+      imageUrl: order.imageUrl || order['Image URL'] || ''
     };
   };
 
@@ -539,9 +545,9 @@ export default function OrdersManager({ onGenerateInvoice }) {
                             <Cpu size={12} />
                             <span>{order.machine || 'Auto'}</span>
                           </span>
-                          {order.laborHours > 0 && (
+                          {(order.laborMinutes > 0 || order.laborHours > 0) && (
                             <span style={{ color: 'var(--text-secondary)' }}>
-                              • {order.laborHours}h
+                              • {order.laborMinutes ? `${order.laborMinutes}m` : `${Math.round((order.laborHours || 0) * 60)}m`}
                             </span>
                           )}
                         </div>

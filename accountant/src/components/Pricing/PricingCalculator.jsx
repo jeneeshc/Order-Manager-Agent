@@ -32,7 +32,7 @@ export default function PricingCalculator({ onTransferToInvoice }) {
   
   // Inputs
   const [stitchCount, setStitchCount] = useState(75000);
-  const [laborHours, setLaborHours] = useState(6);
+  const [laborMinutes, setLaborMinutes] = useState(60);
   const [profitMargin, setProfitMargin] = useState(25); // percentage e.g. 25%
   const [courierCharge, setCourierCharge] = useState(150);
   const [hasCourier, setHasCourier] = useState(true);
@@ -84,8 +84,8 @@ export default function PricingCalculator({ onTransferToInvoice }) {
     ? (Math.max(0, parseInteger(stitchCount)) / 1000) * ratePer1000
     : 0;
 
-  // Labor Cost = Labor Hours * 100
-  const laborCost = (Math.max(0, parseCurrency(laborHours))) * hourlyRate;
+  // Labor Cost = (Labor Minutes / 60) * Hourly Rate
+  const laborCost = (Math.max(0, parseCurrency(laborMinutes)) / 60.0) * hourlyRate;
 
   // Base Cost = Stitch Cost + Labor Cost
   const baseCost = stitchCost + laborCost;
@@ -106,7 +106,7 @@ export default function PricingCalculator({ onTransferToInvoice }) {
 
   // Preset buttons
   const stitchPresets = [25000, 50000, 85000, 120000, 200000, 350000];
-  const laborPresets = [1, 2, 4, 6, 8, 12, 16];
+  const laborPresets = [15, 30, 45, 60, 90, 120, 240];
   const marginPresets = [15, 20, 25, 30, 35, 50];
 
   const handleGenerateInvoice = () => {
@@ -121,7 +121,8 @@ export default function PricingCalculator({ onTransferToInvoice }) {
       serviceType,
       description: defaultDesc,
       totalStitches: serviceType === 'Machine Embroidery' ? parseInteger(stitchCount) : 0,
-      laborHours: parseCurrency(laborHours),
+      laborMinutes: parseInteger(laborMinutes),
+      laborHours: Number((parseCurrency(laborMinutes) / 60.0).toFixed(2)),
       marginPercent: parseCurrency(profitMargin),
       baseCost,
       netPrice: preTaxSellingPrice,
@@ -236,22 +237,22 @@ export default function PricingCalculator({ onTransferToInvoice }) {
             </div>
           )}
 
-          {/* Labor Hours */}
+          {/* Labor Minutes */}
           <div className="input-group" style={{ marginBottom: '22px' }}>
             <div className="input-label">
-              <span>LABOR HOURS BILLED</span>
+              <span>LABOR (MINUTES) BILLED</span>
               <span style={{ color: 'var(--accent-emerald)', fontWeight: 700 }}>
-                ₹{hourlyRate} / hour
+                ₹{hourlyRate} / hour (₹{(hourlyRate / 60).toFixed(2)}/min)
               </span>
             </div>
             <input
               type="number"
               min="0"
-              step="0.5"
+              step="1"
               className="input-field"
               style={{ fontSize: '1.1rem', fontWeight: 600 }}
-              value={laborHours}
-              onChange={(e) => setLaborHours(e.target.value)}
+              value={laborMinutes}
+              onChange={(e) => setLaborMinutes(e.target.value)}
             />
             {/* Presets */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
@@ -263,12 +264,12 @@ export default function PricingCalculator({ onTransferToInvoice }) {
                   style={{
                     padding: '4px 8px',
                     fontSize: '0.74rem',
-                    background: parseFloat(laborHours) === val ? 'rgba(16, 185, 129, 0.25)' : undefined,
-                    borderColor: parseFloat(laborHours) === val ? 'var(--accent-emerald)' : undefined
+                    background: parseInt(laborMinutes, 10) === val ? 'rgba(16, 185, 129, 0.25)' : undefined,
+                    borderColor: parseInt(laborMinutes, 10) === val ? 'var(--accent-emerald)' : undefined
                   }}
-                  onClick={() => setLaborHours(val)}
+                  onClick={() => setLaborMinutes(val)}
                 >
-                  {val} {val === 1 ? 'hr' : 'hrs'}
+                  {val >= 60 && val % 60 === 0 ? `${val / 60}h (${val}m)` : `${val}m`}
                 </button>
               ))}
             </div>
@@ -475,7 +476,7 @@ export default function PricingCalculator({ onTransferToInvoice }) {
               {/* Labor Cost */}
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: '0.88rem' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>
-                  Labor Cost <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>({laborHours} hrs × ₹{hourlyRate})</span>
+                  Labor Cost <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>({laborMinutes} mins [{(parseCurrency(laborMinutes) / 60.0).toFixed(2)} hrs] × ₹{hourlyRate}/hr)</span>
                 </span>
                 <span style={{ fontWeight: 600 }}>₹{laborCost.toFixed(2)}</span>
               </div>
