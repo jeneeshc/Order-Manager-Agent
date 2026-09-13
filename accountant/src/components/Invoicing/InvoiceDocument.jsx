@@ -1,9 +1,11 @@
-import React from 'react';
-import { Printer, ArrowLeft, Download, Share2, CheckCircle2, ShieldAlert } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Printer, ArrowLeft, Download, Share2, CheckCircle2, ShieldAlert, Loader2 } from 'lucide-react';
 import { storageService, parseCurrency } from '../../services/storageService';
 
 export default function InvoiceDocument({ invoice, onBack, onMarkPaid }) {
   const config = storageService.getConfig();
+  const shareCardRef = useRef(null);
+  const [isSharing, setIsSharing] = useState(false);
 
   if (!invoice) {
     return (
@@ -35,16 +37,17 @@ export default function InvoiceDocument({ invoice, onBack, onMarkPaid }) {
   };
 
   const handleShare = async () => {
+    if (isSharing) return;
+    setIsSharing(true);
+
     const rawPhone = getCustomerPhone();
     let cleanPhone = rawPhone.replace(/[^0-9]/g, '');
-    if (cleanPhone.length === 10) {
-      cleanPhone = '91' + cleanPhone;
-    }
+    if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
 
     const studioName = config.studio_name || 'CJS Designs';
     const totalFormatted = `₹${parseCurrency(invoice.grossTotal).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-    const message = [
+    const textMessage = [
       `*INVOICE: #${invoice.id}*`,
       `*${studioName}*`,
       `---------------------------------`,
@@ -62,21 +65,56 @@ export default function InvoiceDocument({ invoice, onBack, onMarkPaid }) {
       `*${studioName}* | Phone: ${config.studio_phone || '+91 8289897413'}`
     ].join('\n');
 
-    // On mobile devices and supported browsers, invoke the native OS Share Sheet (WhatsApp, Email, Bluetooth, Quick Share, etc.)
-    if (navigator.share) {
+    // Try to share as an image card using html2canvas
+    if (shareCardRef.current && navigator.share) {
       try {
+        const html2canvas = (await import('html2canvas')).default;
+        const canvas = await html2canvas(shareCardRef.current, {
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#0f172a',
+          logging: false
+        });
+
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 1.0));
+        const imageFile = new File([blob], `invoice-${invoice.id}.png`, { type: 'image/png' });
+
+        // Try sharing with image file
+        if (navigator.canShare && navigator.canShare({ files: [imageFile] })) {
+          await navigator.share({
+            files: [imageFile],
+            title: `Invoice #${invoice.id} - ${studioName}`,
+            text: textMessage
+          });
+          setIsSharing(false);
+          return;
+        }
+
+        // Fallback: share text only via native share sheet
         await navigator.share({
           title: `Invoice #${invoice.id} - ${studioName}`,
-          text: message
+          text: textMessage
         });
+        setIsSharing(false);
         return;
       } catch (err) {
-        if (err.name === 'AbortError') return;
+        if (err.name === 'AbortError') { setIsSharing(false); return; }
+        // If image share failed, fall through to WhatsApp link
+      }
+    } else if (navigator.share) {
+      try {
+        await navigator.share({ title: `Invoice #${invoice.id} - ${studioName}`, text: textMessage });
+        setIsSharing(false);
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') { setIsSharing(false); return; }
       }
     }
 
-    // Fallback if navigator.share is unavailable (e.g. desktop browser)
-    openWhatsAppLink(cleanPhone, message);
+    // Desktop fallback: open WhatsApp with text
+    openWhatsAppLink(cleanPhone, textMessage);
+    setIsSharing(false);
   };
 
   const handlePrint = () => {
@@ -119,7 +157,7 @@ export default function InvoiceDocument({ invoice, onBack, onMarkPaid }) {
             </button>
           )}
           
-          {/* Native System Share Button (WhatsApp, Email, Bluetooth, etc.) */}
+          {/* Image Card Share Button */}
           <button
             type="button"
             className="btn btn-secondary"
@@ -131,13 +169,15 @@ export default function InvoiceDocument({ invoice, onBack, onMarkPaid }) {
               fontWeight: 600,
               borderColor: 'rgba(99, 102, 241, 0.4)',
               background: 'rgba(99, 102, 241, 0.12)',
-              color: '#a5b4fc'
+              color: '#a5b4fc',
+              opacity: isSharing ? 0.7 : 1
             }}
             onClick={handleShare}
-            title="Share invoice via WhatsApp, Email, Bluetooth, etc."
+            disabled={isSharing}
+            title="Share invoice card via WhatsApp, Email, etc."
           >
-            <Share2 size={16} />
-            <span>Share</span>
+            {isSharing ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Share2 size={16} />}
+            <span>{isSharing ? 'Preparing...' : 'Share'}</span>
           </button>
 
           <button className="btn btn-primary" onClick={handlePrint}>
@@ -431,6 +471,167 @@ export default function InvoiceDocument({ invoice, onBack, onMarkPaid }) {
               Authorized Signatory
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Hidden off-screen WhatsApp Share Card — captured by html2canvas */}
+      <div
+        ref={shareCardRef}
+        style={{
+          position: 'fixed',
+          left: '-9999px',
+          top: 0,
+          width: '480px',
+          background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+          borderRadius: '20px',
+          overflow: 'hidden',
+          fontFamily: "'Plus Jakarta Sans', Arial, sans-serif",
+          color: '#f8fafc'
+        }}
+      >
+        {/* Card Header — brand strip */}
+        <div style={{
+          background: 'linear-gradient(90deg, #b45309 0%, #d97706 100%)',
+          padding: '14px 24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
+        }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#fff', letterSpacing: '0.02em' }}>
+              {config.studio_name || 'CJS Designs'}
+            </div>
+            <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.85)', marginTop: '1px' }}>
+              {config.tagline || 'Crafting fashion on fabric'}
+            </div>
+          </div>
+          <div style={{
+            background: 'rgba(255,255,255,0.2)',
+            borderRadius: '8px',
+            padding: '4px 10px',
+            fontSize: '0.72rem',
+            fontWeight: 700,
+            color: '#fff',
+            letterSpacing: '0.04em'
+          }}>
+            INVOICE
+          </div>
+        </div>
+
+        {/* Card Body */}
+        <div style={{ padding: '20px 24px' }}>
+          {/* Invoice ID & Date row */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+            <div>
+              <div style={{ fontSize: '0.68rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Invoice No.</div>
+              <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#fbbf24', fontFamily: 'monospace' }}>#{invoice.id}</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '0.68rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Date</div>
+              <div style={{ fontWeight: 600, fontSize: '0.88rem', color: '#e2e8f0' }}>{invoice.date}</div>
+            </div>
+          </div>
+
+          {/* Customer */}
+          <div style={{
+            background: 'rgba(255,255,255,0.05)',
+            borderRadius: '10px',
+            padding: '10px 14px',
+            marginBottom: '14px',
+            borderLeft: '3px solid #f59e0b'
+          }}>
+            <div style={{ fontSize: '0.68rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '2px' }}>Bill To</div>
+            <div style={{ fontWeight: 700, fontSize: '1rem', color: '#f8fafc' }}>{invoice.customer}</div>
+            {getCustomerPhone() && (
+              <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '2px' }}>📞 {getCustomerPhone()}</div>
+            )}
+          </div>
+
+          {/* Service + Design Image row */}
+          <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', marginBottom: '16px' }}>
+            {orderImage && (
+              <img
+                src={orderImage}
+                alt="Design"
+                crossOrigin="anonymous"
+                style={{
+                  width: '90px',
+                  height: '90px',
+                  objectFit: 'cover',
+                  borderRadius: '10px',
+                  border: '2px solid rgba(245,158,11,0.4)',
+                  flexShrink: 0
+                }}
+              />
+            )}
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '0.68rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Service</div>
+              <div style={{ fontWeight: 700, fontSize: '0.92rem', color: '#f8fafc', marginBottom: '4px' }}>{invoice.serviceType}</div>
+              <div style={{ fontSize: '0.78rem', color: '#94a3b8', lineHeight: 1.4 }}>
+                {(invoice.description || '').replace(/\s*\(AI Order:.*?\)/, '').trim() || 'Custom embroidery work'}
+              </div>
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginBottom: '14px' }} />
+
+          {/* Amount summary */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
+            {parseCurrency(invoice.courier) > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#94a3b8' }}>
+                <span>Courier</span>
+                <span>₹{parseCurrency(invoice.courier).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              </div>
+            )}
+            {parseCurrency(invoice.gst) > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#94a3b8' }}>
+                <span>GST ({config.gst_rate_percent || 18}%)</span>
+                <span>₹{parseCurrency(invoice.gst).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              </div>
+            )}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              background: 'linear-gradient(90deg, rgba(180,83,9,0.2), rgba(217,119,6,0.2))',
+              borderRadius: '8px',
+              padding: '10px 14px',
+              marginTop: '4px'
+            }}>
+              <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#fbbf24' }}>Total Amount</span>
+              <span style={{ fontWeight: 800, fontSize: '1.1rem', color: '#fbbf24' }}>
+                ₹{parseCurrency(invoice.grossTotal).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          </div>
+
+          {/* Status badge */}
+          <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+            <span style={{
+              display: 'inline-block',
+              padding: '4px 16px',
+              borderRadius: '20px',
+              fontSize: '0.75rem',
+              fontWeight: 700,
+              letterSpacing: '0.06em',
+              background: invoice.status === 'Paid' ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)',
+              color: invoice.status === 'Paid' ? '#34d399' : '#fbbf24',
+              border: invoice.status === 'Paid' ? '1px solid rgba(16,185,129,0.4)' : '1px solid rgba(245,158,11,0.4)'
+            }}>
+              {invoice.status === 'Paid' ? '✓ PAID' : '● PAYMENT PENDING'}
+            </span>
+          </div>
+        </div>
+
+        {/* Card Footer */}
+        <div style={{
+          background: 'rgba(0,0,0,0.3)',
+          padding: '10px 24px',
+          textAlign: 'center',
+          fontSize: '0.72rem',
+          color: '#64748b'
+        }}>
+          {config.studio_phone || '+91 8289897413'} • {config.studio_address || ''}
         </div>
       </div>
     </div>
