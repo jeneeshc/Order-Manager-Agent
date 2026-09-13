@@ -1,5 +1,5 @@
 from src.agents.state import AgentState
-from src.services.sheets import GoogleSheetsService
+from src.services.db import FirestoreDatabaseService
 
 def parse_numeric_rate(val, default: float) -> float:
     """Safely coerces numeric rates, stripping '%', 'Rs', '₹', commas, and whitespace."""
@@ -30,7 +30,7 @@ class EstimationAgent:
         """
         print(f"[{self.name}] Connecting to Database to retrieve pricing rates from Config tab...")
         
-        db = GoogleSheetsService()
+        db = FirestoreDatabaseService()
         config = db.get_config_variables()
         
         base_rate = parse_numeric_rate(

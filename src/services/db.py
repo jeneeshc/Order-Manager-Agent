@@ -324,10 +324,11 @@ class FirestoreDatabaseService:
         try:
             order_id = state.order_id or f"CJS-{str(datetime.datetime.now().timestamp())[-6:].replace('.', '')}"
             customer_name = state.customer_name or "Unknown Client"
-            customer_id = state.customer_id or self.create_customer_if_not_exists(customer_name, phone=state.customer_phone)
+            phone_val = getattr(state, "customer_phone", "") or getattr(state, "phone", "") or ""
+            customer_id = getattr(state, "customer_id", None) or self.create_customer_if_not_exists(customer_name, phone=phone_val)
 
             # Cost formatting
-            total_cost_val = state.total_cost_rs or 0
+            total_cost_val = getattr(state, "total_cost_rs", 0) or 0
             if isinstance(total_cost_val, (int, float)) and float(total_cost_val).is_integer():
                 cost_str = f"Rs {int(total_cost_val)}"
             else:
@@ -338,19 +339,19 @@ class FirestoreDatabaseService:
                 "order_id": order_id,
                 "customer_id": customer_id,
                 "customer_name": customer_name,
-                "phone": state.customer_phone or "",
-                "order_type": state.order_type or "Machine Embroidery",
-                "template_name": state.template_name or "",
-                "quantity": int(state.quantity or 1),
-                "stitch_count": int(state.stitch_count or 0),
-                "labor_hours": round(float(state.labor_hours or 0.0), 2),
-                "machine": state.machine_assigned or "None",
-                "estimated_delivery_date": state.estimated_completion_date or state.requested_delivery_date or "",
+                "phone": phone_val,
+                "order_type": getattr(state, "order_type", "") or "Machine Embroidery",
+                "template_name": getattr(state, "template_name", "") or "",
+                "quantity": int(getattr(state, "quantity", 1) or 1),
+                "stitch_count": int(getattr(state, "stitch_count", 0) or 0),
+                "labor_hours": round(float(getattr(state, "labor_hours", 0.0) or 0.0), 2),
+                "machine": getattr(state, "machine_assigned", "None") or "None",
+                "estimated_delivery_date": getattr(state, "estimated_completion_date", None) or getattr(state, "requested_delivery_date", "") or "",
                 "estimated_cost": cost_str,
                 "payment_status": getattr(state, "invoice_status", None) or "Estimated",
-                "reasoning": state.aggregated_reasoning or "",
-                "overrides": state.override_reason or "",
-                "image_url": state.image_url or "",
+                "reasoning": getattr(state, "aggregated_reasoning", "") or "",
+                "overrides": getattr(state, "override_reason", "") or "",
+                "image_url": getattr(state, "image_url", "") or "",
                 "created_at": datetime.datetime.now(IST).isoformat(),
                 "updated_at": datetime.datetime.now(IST).isoformat()
             }
@@ -389,7 +390,7 @@ class FirestoreDatabaseService:
                 "estimated_cost": cost_str,
                 "payment_status": state.invoice_status or existing.get("payment_status"),
                 "reasoning": state.aggregated_reasoning or existing.get("reasoning"),
-                "overrides": state.override_reason or existing.get("overrides"),
+                "overrides": getattr(state, "override_reason", "") or existing.get("overrides", ""),
                 "image_url": state.image_url or existing.get("image_url"),
                 "updated_at": datetime.datetime.now(IST).isoformat()
             }

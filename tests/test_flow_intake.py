@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from dotenv import load_dotenv
+from src.services.db import FirestoreDatabaseService
 
 load_dotenv()
 
@@ -39,8 +40,9 @@ def test_flow_payload_injection_and_costing():
         "GST Rate Percent": 18.0
     }
 
-    with patch.object(GoogleSheetsService, '__init__', return_value=None):
-        with patch.object(GoogleSheetsService, 'get_config_variables', return_value=mock_config):
+    from src.services.db import FirestoreDatabaseService
+    with patch.object(FirestoreDatabaseService, '__init__', return_value=None):
+        with patch.object(FirestoreDatabaseService, 'get_config_variables', return_value=mock_config):
             estimator = EstimationAgent()
             res = estimator.process(state)
 
@@ -114,8 +116,8 @@ def test_labor_minutes_conversion_and_template_lookup():
         "GST Rate Percent": 18.0
     }
 
-    with patch.object(GoogleSheetsService, '__init__', return_value=None):
-        with patch.object(GoogleSheetsService, 'get_config_variables', return_value=mock_config):
+    with patch.object(FirestoreDatabaseService, '__init__', return_value=None):
+        with patch.object(FirestoreDatabaseService, 'get_config_variables', return_value=mock_config):
             estimator = EstimationAgent()
             res = estimator.process(state)
 
@@ -179,26 +181,31 @@ def test_customer_forwardable_response_omits_internal_costing():
 
         process_webhook_message("+919999999999", "[FORM_SUBMITTED]", mock_payload)
 
-        # Verify an image message was sent with caption
-        assert len(sent_images) == 1
-        to_phone, media_id, caption = sent_images[0]
+        # Verify text message with Estimate heading was sent reliably:
+        assert len(sent_messages) == 1
+        to_phone, text_msg = sent_messages[0]
         assert to_phone == "+919999999999"
-        assert media_id == "mock_media_12345"
-        
-        # Verify customer-forwardable contents matching user's exact template:
-        assert "✅ New Order Created: CJS-" in caption
-        assert "* Customer: Meera Boutique" in caption
-        assert "* Order Type: Machine Embroidery" in caption
-        assert "* Template: Kurti Neck" in caption
-        assert "* Quantity: 2 pcs" in caption
-        assert "* Est. Delivery Date:" in caption
-        assert "* Total Amount:" in caption
-        assert "* Design Image: https://storage.googleapis.com/cjs-designs-501004-media/order_images/2026_09/CJS-MOCK01.jpg" in caption
+        assert "*Estimate*" in text_msg
+        assert "✅ New Order Created: CJS-" in text_msg
+        assert "* Customer: Meera Boutique" in text_msg
+        assert "* Order Type: Machine Embroidery" in text_msg
+        assert "* Template: Kurti Neck" in text_msg
+        assert "* Quantity: 2 pcs" in text_msg
+        assert "* Est. Delivery Date:" in text_msg
+        assert "* Total Amount:" in text_msg
+        assert "* Design Image: https://storage.googleapis.com/cjs-designs-501004-media/order_images/2026_09/CJS-MOCK01.jpg" in text_msg
 
         # Verify STRICT omission of internal details:
-        assert "* Assigned Machine:" not in caption
-        assert "GST" not in caption
-        assert "Profit Margin" not in caption
-        assert "Base Cost" not in caption
-        assert "Google Sheets" not in caption
+        assert "* Assigned Machine:" not in text_msg
+        assert "GST" not in text_msg
+        assert "Profit Margin" not in text_msg
+        assert "Base Cost" not in text_msg
+        assert "Google Sheets" not in text_msg
+
+        # Verify image was sent using public GCS URL
+        assert len(sent_images) == 1
+        to_phone, img_url, caption = sent_images[0]
+        assert to_phone == "+919999999999"
+        assert img_url == "https://storage.googleapis.com/cjs-designs-501004-media/order_images/2026_09/CJS-MOCK01.jpg"
+        assert "Design Image for Order CJS-" in caption
 

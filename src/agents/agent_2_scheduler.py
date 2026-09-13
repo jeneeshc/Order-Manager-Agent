@@ -1,5 +1,5 @@
 from src.agents.state import AgentState
-from src.services.sheets import GoogleSheetsService
+from src.services.db import FirestoreDatabaseService
 import datetime
 import math
 
@@ -20,7 +20,7 @@ class ProductionSchedulerAgent:
         5. Verify availability against requested delivery date.
         """
         print(f"[{self.name}] Initiating capacity and machine availability analysis...")
-        db = GoogleSheetsService()
+        db = FirestoreDatabaseService()
         
         # 1. Embroidery Design (Software design only, consumes zero machine running time)
         order_type_clean = (state.order_type or "").strip().lower()

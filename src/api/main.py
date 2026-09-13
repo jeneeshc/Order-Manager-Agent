@@ -409,8 +409,9 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                     else:
                         total_cost_str = f"Rs {round(float(total_cost_val), 2)}"
 
-                    # Response formatted to be forwarded directly to customer:
+                    # Response formatted with Estimate heading, ready to be forwarded directly to customer:
                     confirm_reply = (
+                        f"*Estimate*\n"
                         f"{header}\n\n"
                         f"* Customer: {initial_state.customer_name}\n"
                         f"* Order Type: {initial_state.order_type}\n"
@@ -423,22 +424,16 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                         confirm_reply += f"\n* Design Image: {initial_state.image_url}"
 
                     print(f"[FAST-PATH] Sending customer-forwardable confirmation to {sender_phone} for {order_id}")
-                    if initial_state.image_media_id:
+                    # 1. ALWAYS send the text confirmation first so the user reliably gets the estimate instantly
+                    whatsapp_service.send_text_message(sender_phone, confirm_reply)
+
+                    # 2. If a valid image URL exists on Cloud Storage, send the image separately
+                    if initial_state.image_url and (str(initial_state.image_url).startswith("http://") or str(initial_state.image_url).startswith("https://")):
                         whatsapp_service.send_image_message(
                             sender_phone,
-                            initial_state.image_media_id,
-                            caption=confirm_reply
-                        )
-                    elif initial_state.image_url and (str(initial_state.image_url).startswith("http://") or str(initial_state.image_url).startswith("https://")):
-                        sent = whatsapp_service.send_image_message(
-                            sender_phone,
                             initial_state.image_url,
-                            caption=confirm_reply
+                            caption=f"Design Image for Order {order_id}"
                         )
-                        if not sent:
-                            whatsapp_service.send_text_message(sender_phone, confirm_reply)
-                    else:
-                        whatsapp_service.send_text_message(sender_phone, confirm_reply)
 
                     memory_service.clear_state(sender_phone)
                     return

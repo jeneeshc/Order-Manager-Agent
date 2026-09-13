@@ -13,6 +13,8 @@ class AgentState(BaseModel):
     # Agent 1 updates these: Order context
     customer_name: Optional[str] = None
     customer_id: Optional[str] = None
+    customer_phone: Optional[str] = None
+    override_reason: Optional[str] = None
     order_type: Optional[str] = None       # "Machine Embroidery" or "Embroidery design"
     template_name: Optional[str] = None    # e.g. "Saree Border", "Logo", etc.
     fabric_type: Optional[str] = None      # Legacy fallback
