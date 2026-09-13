@@ -168,7 +168,15 @@ def deploy_customer_flow() -> str:
     upload_assets(new_id, flow_json)
     publish_flow(new_id)
     
-    # Save to Google Sheets Config tab
+    # Save to Firestore and Google Sheets Config tab
+    try:
+        from src.services.db import FirestoreDatabaseService
+        fs = FirestoreDatabaseService()
+        fs.set_config_variable("WhatsApp Customer Flow ID", new_id)
+        print(f"-> Saved Customer Flow ID to Firestore config collection.")
+    except Exception as e:
+        print(f"Note: Could not save Customer Flow ID to Firestore: {e}")
+
     try:
         from src.services.sheets import GoogleSheetsService
         db = GoogleSheetsService()

@@ -296,7 +296,15 @@ def redeploy_order_flow() -> str:
     update_env_flow_id(new_id)
     os.environ["WHATSAPP_FLOW_ID"] = new_id
     
-    # Persist in Google Sheets Config tab so all instances share the active flow ID
+    # Persist in Firestore and Google Sheets Config tab so all instances share the active flow ID
+    try:
+        from src.services.db import FirestoreDatabaseService
+        fs = FirestoreDatabaseService()
+        fs.set_config_variable("WhatsApp Flow ID", new_id)
+        print(f"[deploy_flow] Saved Flow ID to Firestore config collection.")
+    except Exception as e:
+        print(f"[deploy_flow] Note: Could not save flow ID to Firestore: {e}")
+
     try:
         from src.services.sheets import GoogleSheetsService
         db = GoogleSheetsService()
