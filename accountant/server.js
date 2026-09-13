@@ -401,15 +401,25 @@ app.post('/api/sheets/orders/status', async (req, res) => {
       return res.status(400).json({ error: 'Missing orderId or status' });
     }
 
-    const docRef = db.collection('orders').document(orderId);
+    const cleanId = String(orderId).trim();
+    let docRef = db.collection('orders').document(cleanId);
+    let docSnap = await docRef.get();
+    if (!docSnap.exists) {
+      const upperRef = db.collection('orders').document(cleanId.toUpperCase());
+      const upperSnap = await upperRef.get();
+      if (upperSnap.exists) {
+        docRef = upperRef;
+      }
+    }
     await docRef.set({
       payment_status: status,
+      status: status,
       updated_at: new Date().toISOString()
     }, { merge: true });
 
     return res.json({
       success: true,
-      orderId,
+      orderId: docRef.id,
       status
     });
   } catch (err) {

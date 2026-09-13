@@ -22,9 +22,10 @@ import {
 import { storageService, parseCurrency, parseInteger } from '../../services/storageService';
 import { googleSheetsService } from '../../services/googleSheetsService';
 
-export default function OrdersManager({ onGenerateInvoice }) {
+export default function OrdersManager({ onGenerateInvoice, onViewInvoice }) {
   const [orders, setOrders] = useState(() => storageService.getOrders());
   const [customers, setCustomers] = useState(() => storageService.getCustomers());
+  const [sales, setSales] = useState(() => storageService.getSales());
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('Estimated');
   const [selectedReasoningOrder, setSelectedReasoningOrder] = useState(null);
@@ -41,6 +42,7 @@ export default function OrdersManager({ onGenerateInvoice }) {
     return storageService.subscribe(() => {
       setOrders(storageService.getOrders());
       setCustomers(storageService.getCustomers());
+      setSales(storageService.getSales());
     });
   }, []);
 
@@ -101,10 +103,20 @@ export default function OrdersManager({ onGenerateInvoice }) {
     };
   };
 
-  // Status helpers
-  const isOrderComplete = (status) => {
+  // Map of order IDs that have already been converted to invoices
+  const invoicedOrderMap = {};
+  sales.forEach(s => {
+    const ref = s.orderRef || s.orderId;
+    if (ref) {
+      invoicedOrderMap[String(ref).trim().toUpperCase()] = s;
+    }
+  });
+
+  // Status helpers — an order is complete if marked Complete OR if an invoice was generated for it
+  const isOrderComplete = (status, orderId) => {
+    if (orderId && invoicedOrderMap[String(orderId).trim().toUpperCase()]) return true;
     const s = (status || '').trim().toLowerCase();
-    return s === 'complete' || s === 'completed';
+    return s === 'complete' || s === 'completed' || s === 'invoiced' || s === 'billed' || s === 'paid';
   };
 
   const isOrderCancelled = (status) => {
@@ -112,8 +124,8 @@ export default function OrdersManager({ onGenerateInvoice }) {
     return s === 'cancelled' || s === 'canceled' || s === 'dropped' || s === 'lost' || s === 'rejected';
   };
 
-  const isOrderEstimated = (status) => {
-    return !isOrderComplete(status) && !isOrderCancelled(status);
+  const isOrderEstimated = (status, orderId) => {
+    return !isOrderComplete(status, orderId) && !isOrderCancelled(status);
   };
 
   // Update order status handler (Estimated | Cancelled)
@@ -148,16 +160,16 @@ export default function OrdersManager({ onGenerateInvoice }) {
     if (!matchesSearch) return false;
 
     if (filterStatus === 'All') return true;
-    if (filterStatus === 'Estimated') return isOrderEstimated(order.status);
-    if (filterStatus === 'Complete') return isOrderComplete(order.status);
+    if (filterStatus === 'Estimated') return isOrderEstimated(order.status, order.id);
+    if (filterStatus === 'Complete') return isOrderComplete(order.status, order.id);
     if (filterStatus === 'Cancelled') return isOrderCancelled(order.status);
     return true;
   });
 
   // KPI Metrics
   const totalOrdersCount = orders.length;
-  const estimatedOrders = orders.filter(o => isOrderEstimated(o.status));
-  const completedOrders = orders.filter(o => isOrderComplete(o.status));
+  const estimatedOrders = orders.filter(o => isOrderEstimated(o.status, o.id));
+  const completedOrders = orders.filter(o => isOrderComplete(o.status, o.id));
   const cancelledOrders = orders.filter(o => isOrderCancelled(o.status));
 
   // Pipeline value (strictly active pending estimated orders)
@@ -382,9 +394,10 @@ export default function OrdersManager({ onGenerateInvoice }) {
               ) : (
                 filteredOrders.map((order) => {
                   const cust = resolveCustomer(order.customerId, order.customerName, order.phone);
-                  const isComplete = isOrderComplete(order.status);
+                  const isComplete = isOrderComplete(order.status, order.id);
                   const isCancelled = isOrderCancelled(order.status);
-                  const isEstimated = isOrderEstimated(order.status);
+                  const isEstimated = isOrderEstimated(order.status, order.id);
+                  const invoicedSale = invoicedOrderMap[String(order.id).trim().toUpperCase()];
                   const isUpdating = updatingOrderId === order.id;
 
                   return (
@@ -653,21 +666,30 @@ export default function OrdersManager({ onGenerateInvoice }) {
 
                           {/* Completed Order Actions */}
                           {isComplete && (
-                            <button
-                              type="button"
-                              className="btn btn-secondary"
-                              style={{ padding: '6px 12px', fontSize: '0.82rem' }}
-                              onClick={() => handleUpdateStatus(order, 'Estimated')}
-                              disabled={isUpdating}
-                              title="Click to revert back to Estimated"
-                            >
-                              {isUpdating ? (
-                                <RefreshCw size={14} className="spin-animation" />
-                              ) : (
-                                <CheckCircle2 size={14} style={{ color: 'var(--accent-emerald)' }} />
+                            <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
+                              {invoicedSale && (
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary"
+                                  style={{ padding: '6px 12px', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                  onClick={() => onViewInvoice && onViewInvoice(invoicedSale.id)}
+                                  title="View generated invoice"
+                                >
+                                  <Receipt size={13} />
+                                  <span>View Invoice</span>
+                                </button>
                               )}
-                              <span>{isUpdating ? 'Saving...' : 'Complete ✓'}</span>
-                            </button>
+                              <button
+                                type="button"
+                                className="btn btn-ghost"
+                                style={{ padding: '6px 8px', fontSize: '0.82rem', color: 'var(--text-muted)' }}
+                                onClick={() => handleUpdateStatus(order, 'Estimated')}
+                                disabled={isUpdating}
+                                title="Reopen order to Estimated"
+                              >
+                                {isUpdating ? <RefreshCw size={13} className="spin-animation" /> : <RotateCcw size={13} />}
+                              </button>
+                            </div>
                           )}
                         </div>
                       </td>

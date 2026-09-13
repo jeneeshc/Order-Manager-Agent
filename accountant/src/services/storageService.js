@@ -567,10 +567,17 @@ class StorageService {
   }
 
   updateOrderStatus(orderId, newStatus) {
+    if (!orderId) return null;
+    const clean = String(orderId).trim().toUpperCase();
     const orders = this.getOrders();
-    const index = orders.findIndex(o => o.id === orderId);
+    const index = orders.findIndex(o => String(o.id || o['Order ID'] || '').trim().toUpperCase() === clean);
     if (index !== -1) {
-      orders[index] = { ...orders[index], status: newStatus };
+      orders[index] = { 
+        ...orders[index], 
+        status: newStatus,
+        'Payment Status': newStatus,
+        paymentStatus: newStatus
+      };
       this.save(STORAGE_KEYS.ORDERS, orders);
       return orders[index];
     }
@@ -579,7 +586,16 @@ class StorageService {
 
   getEstimatedOrdersCount() {
     const orders = this.getOrders();
-    return orders.filter(o => (o.status || '').toLowerCase() === 'estimated').length;
+    const sales = this.getSales();
+    const invoicedOrderIds = new Set(
+      sales.map(s => String(s.orderRef || s.orderId || '').trim().toUpperCase()).filter(Boolean)
+    );
+    return orders.filter(o => {
+      const s = (o.status || o['Payment Status'] || '').toLowerCase();
+      const isDone = s === 'complete' || s === 'completed' || s === 'invoiced' || s === 'paid' || invoicedOrderIds.has(String(o.id || o['Order ID'] || '').trim().toUpperCase());
+      const isCancelled = s === 'cancelled' || s === 'canceled' || s === 'dropped' || s === 'lost' || s === 'rejected';
+      return !isDone && !isCancelled;
+    }).length;
   }
 
   // --- ASSET & DEPRECIATION METHODS ---

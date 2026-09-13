@@ -80,6 +80,10 @@ export default function InvoiceManager({ initialViewInvoiceId, initialCreatePayl
   };
 
   const handleCreateSuccess = (newInvoice) => {
+    if (newInvoice && newInvoice.orderRef) {
+      storageService.updateOrderStatus(newInvoice.orderRef, 'Complete');
+      googleSheetsService.updateOrderStatus(newInvoice.orderRef, 'Complete').catch(() => {});
+    }
     setSelectedInvoice(newInvoice);
     setMode('view');
     if (onClearInitial) onClearInitial();

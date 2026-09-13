@@ -28,7 +28,15 @@ export default function InvoiceForm({ initialData, onSaveSuccess, onCancel }) {
   const [customerAddress, setCustomerAddress] = useState(initialData?.customerAddress || '');
   const [serviceType, setServiceType] = useState(initialData?.serviceType || serviceCategories[0] || 'Machine Embroidery');
   const [description, setDescription] = useState(initialData?.description || '');
-  const orderRef = initialData?.orderId || initialData?.orderRef || '';
+  const resolveOrderRef = () => {
+    if (initialData?.orderId) return initialData.orderId;
+    if (initialData?.orderRef) return initialData.orderRef;
+    if (initialData?.['Order ID']) return initialData['Order ID'];
+    const desc = initialData?.description || '';
+    const m = desc.match(/CJS-[A-Za-z0-9]+/i);
+    return m ? m[0].toUpperCase() : '';
+  };
+  const orderRef = resolveOrderRef();
 
   // Dynamic directory of customers loaded from Google Sheets
   const [rawCustomers, setRawCustomers] = useState(() => googleSheetsService.getCustomers());
@@ -173,10 +181,11 @@ export default function InvoiceForm({ initialData, onSaveSuccess, onCancel }) {
       console.warn('Google Sheet background append error:', err);
     });
 
-    // If linked to an AI Order and status is Paid, update the order in Google Sheets
-    if (orderRef && status === 'Paid') {
+    // If linked to an AI Order, immediately mark the order as Complete so it clears from the active Orders tab
+    if (orderRef) {
+      storageService.updateOrderStatus(orderRef, 'Complete');
       googleSheetsService.updateOrderStatus(orderRef, 'Complete').catch(err => {
-        console.warn('Google Sheet order status sync error:', err);
+        console.warn('Order status sync error on invoice creation:', err);
       });
     }
 

@@ -160,6 +160,7 @@ function MainApp() {
         {activeTab === 'orders' && (
           <OrdersManager
             onGenerateInvoice={handleGenerateInvoiceFromOrder}
+            onViewInvoice={handleViewInvoiceFromDashboard}
           />
         )}
 
