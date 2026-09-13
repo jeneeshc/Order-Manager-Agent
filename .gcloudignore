@@ -11,3 +11,5 @@ ngrok.exe
 .pytest_cache/
 .benchmarks/
 .git/
+node_modules/
+accountant/node_modules/
