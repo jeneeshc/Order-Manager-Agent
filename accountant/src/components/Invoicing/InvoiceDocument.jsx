@@ -72,8 +72,8 @@ export default function InvoiceDocument({ invoice, onBack, onMarkPaid }) {
         const canvas = await html2canvas(shareCardRef.current, {
           scale: 2,
           useCORS: true,
-          allowTaint: true,
-          backgroundColor: '#0f172a',
+          allowTaint: false,
+          backgroundColor: '#ffffff',
           logging: false
         });
 
@@ -125,13 +125,22 @@ export default function InvoiceDocument({ invoice, onBack, onMarkPaid }) {
   const isPaid = invoice.status === 'Paid';
 
   // Resolve design reference image from invoice, linked order, or description regex
-  const orderImage = invoice.imageUrl ||
-    (invoice.orderRef ? storageService.getOrderById(invoice.orderRef)?.imageUrl : null) ||
-    (invoice.orderId ? storageService.getOrderById(invoice.orderId)?.imageUrl : null) ||
+  const rawOrderImage = invoice.imageUrl ||
+    invoice['Image URL'] ||
+    invoice.image_url ||
+    (invoice.orderRef ? (storageService.getOrderById(invoice.orderRef)?.imageUrl || storageService.getOrderById(invoice.orderRef)?.['Image URL'] || storageService.getOrderById(invoice.orderRef)?.image_url) : null) ||
+    (invoice.orderId ? (storageService.getOrderById(invoice.orderId)?.imageUrl || storageService.getOrderById(invoice.orderId)?.['Image URL'] || storageService.getOrderById(invoice.orderId)?.image_url) : null) ||
     (() => {
       const m = (invoice.description || '').match(/CJS-[A-Z0-9]+/i);
-      return m ? storageService.getOrderById(m[0])?.imageUrl : null;
+      if (!m) return null;
+      const linked = storageService.getOrderById(m[0]) || storageService.getOrderById(m[0].toUpperCase());
+      return linked ? (linked.imageUrl || linked['Image URL'] || linked.image_url) : null;
     })() || '';
+
+  const hasCustomImage = Boolean(rawOrderImage);
+  const orderImage = hasCustomImage
+    ? (rawOrderImage.startsWith('http') ? `/api/media/proxy?url=${encodeURIComponent(rawOrderImage)}` : rawOrderImage)
+    : '/placeholder-design.svg';
 
   return (
     <div style={{ maxWidth: '850px', margin: '0 auto' }}>
@@ -351,29 +360,40 @@ export default function InvoiceDocument({ invoice, onBack, onMarkPaid }) {
               <td style={{ padding: '16px', verticalAlign: 'top', color: '#64748b', fontWeight: 600 }}>01</td>
               <td style={{ padding: '16px', verticalAlign: 'top' }}>
                 <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-                  {orderImage && (
-                    <div style={{ flexShrink: 0, textAlign: 'center' }}>
-                      <a href={orderImage} target="_blank" rel="noopener noreferrer" title="Click to view full size design artwork">
-                        <img 
-                          src={orderImage} 
-                          alt="Design Reference" 
-                          style={{ 
-                            width: '84px', 
-                            height: '84px', 
-                            objectFit: 'contain', 
-                            background: '#f8fafc',
-                            borderRadius: '8px', 
-                            border: '1px solid #cbd5e1',
-                            padding: '2px',
-                            display: 'block'
-                          }} 
-                        />
-                      </a>
-                      <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '4px', fontWeight: 600 }}>
-                        Design Ref
-                      </div>
+                  {/* Design Artwork Reference (or Placeholder) */}
+                  <div style={{ flexShrink: 0, textAlign: 'center' }}>
+                    <a
+                      href={hasCustomImage ? rawOrderImage : '#'}
+                      target={hasCustomImage ? "_blank" : "_self"}
+                      rel="noopener noreferrer"
+                      onClick={(e) => { if (!hasCustomImage) e.preventDefault(); }}
+                      title={hasCustomImage ? "Click to view full size design artwork" : "Standard CJS embroidery design reference"}
+                    >
+                      <img 
+                        src={orderImage} 
+                        alt="Design Reference" 
+                        style={{ 
+                          width: '84px', 
+                          height: '84px', 
+                          objectFit: 'cover', 
+                          background: '#0f172a',
+                          borderRadius: '8px', 
+                          border: hasCustomImage ? '1.5px solid #f59e0b' : '1px dashed #cbd5e1',
+                          padding: '2px',
+                          display: 'block',
+                          boxShadow: '0 2px 6px rgba(0,0,0,0.1)'
+                        }} 
+                        onError={(e) => {
+                          if (e.target.src !== window.location.origin + '/placeholder-design.svg') {
+                            e.target.src = '/placeholder-design.svg';
+                          }
+                        }}
+                      />
+                    </a>
+                    <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '4px', fontWeight: 600 }}>
+                      {hasCustomImage ? 'Design Ref' : 'Standard Ref'}
                     </div>
-                  )}
+                  </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.98rem' }}>
                       {invoice.serviceType}
@@ -481,157 +501,270 @@ export default function InvoiceDocument({ invoice, onBack, onMarkPaid }) {
           position: 'fixed',
           left: '-9999px',
           top: 0,
-          width: '480px',
-          background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-          borderRadius: '20px',
+          width: '460px',
+          background: '#ffffff',
+          borderRadius: '16px',
           overflow: 'hidden',
-          fontFamily: "'Plus Jakarta Sans', Arial, sans-serif",
-          color: '#f8fafc'
+          fontFamily: "'Outfit', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+          color: '#0f172a',
+          boxShadow: '0 12px 36px rgba(0,0,0,0.12)',
+          border: '1px solid rgba(217, 119, 6, 0.25)'
         }}
       >
-        {/* Card Header — brand strip */}
+        {/* Top Gold & Emerald Gradient Accent Line */}
         <div style={{
-          background: 'linear-gradient(90deg, #b45309 0%, #d97706 100%)',
-          padding: '14px 24px',
+          height: '5px',
+          background: 'linear-gradient(90deg, #f59e0b 0%, #fbbf24 50%, #059669 100%)'
+        }} />
+
+        {/* Brand Header */}
+        <div style={{
+          padding: '16px 22px 14px',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between'
+          justifyContent: 'space-between',
+          background: '#ffffff',
+          borderBottom: '1px solid #f1f5f9'
         }}>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: '1.1rem', color: '#fff', letterSpacing: '0.02em' }}>
-              {config.studio_name || 'CJS Designs'}
-            </div>
-            <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.85)', marginTop: '1px' }}>
-              {config.tagline || 'Crafting fashion on fabric'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <img
+              src="/siteLogo.png"
+              alt="CJS Designs"
+              crossOrigin="anonymous"
+              style={{ maxHeight: '42px', maxWidth: '140px', objectFit: 'contain' }}
+              onError={(e) => {
+                if (e.target.src !== window.location.origin + '/logo.svg') {
+                  e.target.src = '/logo.svg';
+                }
+              }}
+            />
+            <div>
+              <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0f172a', letterSpacing: '-0.01em', lineHeight: 1.2 }}>
+                {config.studio_name || 'CJS Designs'}
+              </div>
+              <div style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: 600, marginTop: '2px', letterSpacing: '0.04em' }}>
+                {config.tagline || 'Crafting fashion on fabric'}
+              </div>
             </div>
           </div>
-          <div style={{
-            background: 'rgba(255,255,255,0.2)',
-            borderRadius: '8px',
-            padding: '4px 10px',
-            fontSize: '0.72rem',
-            fontWeight: 700,
-            color: '#fff',
-            letterSpacing: '0.04em'
-          }}>
-            INVOICE
+
+          <div style={{ textAlign: 'right' }}>
+            <div style={{
+              display: 'inline-block',
+              background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
+              border: '1px solid #fcd34d',
+              borderRadius: '20px',
+              padding: '3px 12px',
+              fontSize: '0.72rem',
+              fontWeight: 800,
+              color: '#92400e',
+              letterSpacing: '0.08em'
+            }}>
+              INVOICE
+            </div>
+            <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '3px', fontWeight: 600 }}>
+              {invoice.date}
+            </div>
           </div>
         </div>
 
-        {/* Card Body */}
-        <div style={{ padding: '20px 24px' }}>
-          {/* Invoice ID & Date row */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-            <div>
-              <div style={{ fontSize: '0.68rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Invoice No.</div>
-              <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#fbbf24', fontFamily: 'monospace' }}>#{invoice.id}</div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '0.68rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Date</div>
-              <div style={{ fontWeight: 600, fontSize: '0.88rem', color: '#e2e8f0' }}>{invoice.date}</div>
-            </div>
+        {/* Invoice Metadata Bar */}
+        <div style={{
+          background: '#f8fafc',
+          padding: '8px 22px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          borderBottom: '1px solid #f1f5f9'
+        }}>
+          <div>
+            <span style={{ fontSize: '0.68rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: '6px' }}>Invoice:</span>
+            <span style={{ fontWeight: 800, fontSize: '0.92rem', color: '#b45309', fontFamily: 'monospace' }}>#{invoice.id}</span>
           </div>
+          <span style={{
+            display: 'inline-block',
+            padding: '2px 10px',
+            borderRadius: '12px',
+            fontSize: '0.7rem',
+            fontWeight: 800,
+            letterSpacing: '0.05em',
+            background: isPaid ? '#ecfdf5' : '#fffbeb',
+            color: isPaid ? '#047857' : '#b45309',
+            border: isPaid ? '1px solid #a7f3d0' : '1px solid #fde68a'
+          }}>
+            {isPaid ? '✓ PAID' : '● PAYMENT PENDING'}
+          </span>
+        </div>
 
-          {/* Customer */}
+        {/* Card Body */}
+        <div style={{ padding: '16px 22px 18px' }}>
+          {/* Bill To Customer Box */}
           <div style={{
-            background: 'rgba(255,255,255,0.05)',
+            background: '#ffffff',
             borderRadius: '10px',
             padding: '10px 14px',
             marginBottom: '14px',
-            borderLeft: '3px solid #f59e0b'
+            border: '1px solid #e2e8f0',
+            borderLeft: '4px solid #f59e0b'
           }}>
-            <div style={{ fontSize: '0.68rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '2px' }}>Bill To</div>
-            <div style={{ fontWeight: 700, fontSize: '1rem', color: '#f8fafc' }}>{invoice.customer}</div>
+            <div style={{ fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: '2px' }}>
+              BILL TO
+            </div>
+            <div style={{ fontWeight: 800, fontSize: '1rem', color: '#0f172a' }}>
+              {invoice.customer}
+            </div>
             {getCustomerPhone() && (
-              <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '2px' }}>📞 {getCustomerPhone()}</div>
+              <div style={{ fontSize: '0.76rem', color: '#64748b', marginTop: '2px' }}>
+                📞 {getCustomerPhone()}
+              </div>
             )}
           </div>
 
-          {/* Service + Design Image row */}
-          <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', marginBottom: '16px' }}>
-            {orderImage && (
-              <img
-                src={orderImage}
-                alt="Design"
-                crossOrigin="anonymous"
-                style={{
-                  width: '90px',
-                  height: '90px',
-                  objectFit: 'cover',
-                  borderRadius: '10px',
-                  border: '2px solid rgba(245,158,11,0.4)',
-                  flexShrink: 0
-                }}
-              />
-            )}
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: '0.68rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Service</div>
-              <div style={{ fontWeight: 700, fontSize: '0.92rem', color: '#f8fafc', marginBottom: '4px' }}>{invoice.serviceType}</div>
-              <div style={{ fontSize: '0.78rem', color: '#94a3b8', lineHeight: 1.4 }}>
-                {(invoice.description || '').replace(/\s*\(AI Order:.*?\)/, '').trim() || 'Custom embroidery work'}
+          {/* Service + Design Image Row */}
+          <div style={{
+            display: 'flex',
+            gap: '14px',
+            alignItems: 'center',
+            marginBottom: '16px',
+            background: '#fafaf9',
+            border: '1px solid #f0eee9',
+            borderRadius: '12px',
+            padding: '12px'
+          }}>
+            <img
+              src={orderImage}
+              alt="Design Artwork"
+              crossOrigin="anonymous"
+              style={{
+                width: '88px',
+                height: '88px',
+                objectFit: 'cover',
+                borderRadius: '10px',
+                border: hasCustomImage ? '2px solid #f59e0b' : '1px dashed #cbd5e1',
+                background: '#0f172a',
+                flexShrink: 0,
+                boxShadow: '0 3px 10px rgba(0,0,0,0.1)'
+              }}
+              onError={(e) => {
+                if (e.target.src !== window.location.origin + '/placeholder-design.svg') {
+                  e.target.src = '/placeholder-design.svg';
+                }
+              }}
+            />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '0.66rem', color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 800, marginBottom: '2px' }}>
+                SERVICE & ARTWORK
+              </div>
+              <div style={{ fontWeight: 800, fontSize: '0.94rem', color: '#0f172a', marginBottom: '3px' }}>
+                {invoice.serviceType}
+              </div>
+              <div style={{ fontSize: '0.76rem', color: '#57534e', lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                {(invoice.description || '').replace(/\s*\(AI Order:.*?\)/, '').trim() || 'Custom embroidery craft & precision thread work'}
+              </div>
+              <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
+                {invoice.totalStitches > 0 && (
+                  <span style={{ fontSize: '0.68rem', fontWeight: 700, background: '#ecfdf5', color: '#047857', padding: '1px 7px', borderRadius: '4px', border: '1px solid #a7f3d0' }}>
+                    {invoice.totalStitches.toLocaleString()} Stitches
+                  </span>
+                )}
+                {hasCustomImage ? (
+                  <span style={{ fontSize: '0.68rem', fontWeight: 700, background: '#fef3c7', color: '#b45309', padding: '1px 7px', borderRadius: '4px', border: '1px solid #fde68a' }}>
+                    ✓ Custom Artwork Attached
+                  </span>
+                ) : (
+                  <span style={{ fontSize: '0.68rem', fontWeight: 600, background: '#f1f5f9', color: '#64748b', padding: '1px 7px', borderRadius: '4px' }}>
+                    Standard Reference
+                  </span>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Divider */}
-          <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginBottom: '14px' }} />
-
-          {/* Amount summary */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
+          {/* Amount Breakdown */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '14px' }}>
+            {parseCurrency(invoice.netPrice) > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#64748b' }}>
+                <span>Embroidery Work</span>
+                <span style={{ fontWeight: 600, color: '#334155' }}>₹{parseCurrency(invoice.netPrice).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              </div>
+            )}
             {parseCurrency(invoice.courier) > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#94a3b8' }}>
-                <span>Courier</span>
-                <span>₹{parseCurrency(invoice.courier).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#64748b' }}>
+                <span>Courier / Logistics</span>
+                <span style={{ fontWeight: 600, color: '#334155' }}>₹{parseCurrency(invoice.courier).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
               </div>
             )}
             {parseCurrency(invoice.gst) > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#94a3b8' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#64748b' }}>
                 <span>GST ({config.gst_rate_percent || 18}%)</span>
-                <span>₹{parseCurrency(invoice.gst).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                <span style={{ fontWeight: 600, color: '#334155' }}>₹{parseCurrency(invoice.gst).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
               </div>
             )}
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              background: 'linear-gradient(90deg, rgba(180,83,9,0.2), rgba(217,119,6,0.2))',
-              borderRadius: '8px',
-              padding: '10px 14px',
-              marginTop: '4px'
-            }}>
-              <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#fbbf24' }}>Total Amount</span>
-              <span style={{ fontWeight: 800, fontSize: '1.1rem', color: '#fbbf24' }}>
-                ₹{parseCurrency(invoice.grossTotal).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
+          </div>
+
+          {/* Grand Total Highlight Banner (Theme Matching Gold) */}
+          <div style={{
+            background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+            border: '1.5px solid #fcd34d',
+            borderRadius: '12px',
+            padding: '12px 18px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '14px',
+            boxShadow: '0 4px 14px rgba(217,119,6,0.1)'
+          }}>
+            <div>
+              <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#92400e', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                Grand Total Amount
+              </div>
+              <div style={{ fontSize: '0.72rem', color: isPaid ? '#047857' : '#b45309', fontWeight: 700, marginTop: '2px' }}>
+                {isPaid ? 'Payment Cleared' : 'Pending Payment'}
+              </div>
+            </div>
+            <div style={{ fontWeight: 900, fontSize: '1.55rem', color: '#78350f', letterSpacing: '-0.02em' }}>
+              ₹{parseCurrency(invoice.grossTotal).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
 
-          {/* Status badge */}
-          <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-            <span style={{
-              display: 'inline-block',
-              padding: '4px 16px',
-              borderRadius: '20px',
-              fontSize: '0.75rem',
-              fontWeight: 700,
-              letterSpacing: '0.06em',
-              background: invoice.status === 'Paid' ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)',
-              color: invoice.status === 'Paid' ? '#34d399' : '#fbbf24',
-              border: invoice.status === 'Paid' ? '1px solid rgba(16,185,129,0.4)' : '1px solid rgba(245,158,11,0.4)'
+          {/* UPI Payment Info Pill (For Pending Invoices) */}
+          {!isPaid && (
+            <div style={{
+              background: '#f0fdf4',
+              border: '1px dashed #86efac',
+              borderRadius: '8px',
+              padding: '8px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '10px'
             }}>
-              {invoice.status === 'Paid' ? '✓ PAID' : '● PAYMENT PENDING'}
-            </span>
-          </div>
+              <span style={{ fontSize: '0.72rem', color: '#166534', fontWeight: 700 }}>
+                Pay via UPI:
+              </span>
+              <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#15803d', fontFamily: 'monospace' }}>
+                {config.upi_id || 'cjsdesigns@hdfcbank'}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Card Footer */}
         <div style={{
-          background: 'rgba(0,0,0,0.3)',
-          padding: '10px 24px',
+          background: '#f8fafc',
+          borderTop: '1px solid #e2e8f0',
+          padding: '11px 22px',
           textAlign: 'center',
-          fontSize: '0.72rem',
-          color: '#64748b'
+          fontSize: '0.74rem',
+          color: '#64748b',
+          fontWeight: 500
         }}>
-          {config.studio_phone || '+91 8289897413'} • {config.studio_address || ''}
+          <span>📞 {config.studio_phone || '+91 8289897413'}</span>
+          <span style={{ margin: '0 8px', color: '#cbd5e1' }}>•</span>
+          <span>{config.studio_address ? config.studio_address.split(',')[0] : 'Malabar, Kerala'}</span>
+          <div style={{ fontSize: '0.68rem', color: '#b45309', fontWeight: 600, marginTop: '3px' }}>
+            ✨ Thank you for choosing CJS Designs
+          </div>
         </div>
       </div>
     </div>

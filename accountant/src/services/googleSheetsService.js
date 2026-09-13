@@ -398,7 +398,11 @@ class GoogleSheetsService {
               overrides: o['Overrides'] || o.overrides || '',
               overrideDeliveryDate: o['Override Delivery Date'] || o.overrideDeliveryDate || '',
               overrideCost: o['Override Cost (Rs)'] || o.overrideCost || '',
-              overrideMachine: o['Override Machine'] || o.overrideMachine || ''
+              overrideMachine: o['Override Machine'] || o.overrideMachine || '',
+              laborMinutes: o.laborMinutes !== undefined ? parseInt(o.laborMinutes, 10) : Math.round(parseFloat(o['Labor Hours'] || o.laborHours || 0) * 60),
+              imageUrl: o['Image URL'] || o.imageUrl || o.image_url || '',
+              image_url: o['Image URL'] || o.imageUrl || o.image_url || '',
+              'Image URL': o['Image URL'] || o.imageUrl || o.image_url || ''
             };
           });
           storageService.save('cjs_ai_orders', mappedOrders);

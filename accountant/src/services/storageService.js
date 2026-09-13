@@ -556,8 +556,10 @@ class StorageService {
   }
 
   getOrderById(id) {
+    if (!id) return null;
+    const clean = String(id).trim().toUpperCase();
     const orders = this.getOrders();
-    return orders.find(o => o.id === id) || null;
+    return orders.find(o => String(o.id || o['Order ID'] || '').trim().toUpperCase() === clean) || null;
   }
 
   updateOrderStatus(orderId, newStatus) {

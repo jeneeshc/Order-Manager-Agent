@@ -92,7 +92,18 @@ export default function InvoiceForm({ initialData, onSaveSuccess, onCancel }) {
     }
     return 60;
   });
-  const [imageUrl, setImageUrl] = useState(initialData?.imageUrl || initialData?.['Image URL'] || '');
+  const resolveInitialImage = () => {
+    if (initialData?.imageUrl) return initialData.imageUrl;
+    if (initialData?.['Image URL']) return initialData['Image URL'];
+    if (initialData?.image_url) return initialData.image_url;
+    const ordId = initialData?.orderId || initialData?.orderRef;
+    if (ordId) {
+      const linked = storageService.getOrderById(ordId);
+      if (linked) return linked.imageUrl || linked['Image URL'] || linked.image_url || '';
+    }
+    return '';
+  };
+  const [imageUrl, setImageUrl] = useState(resolveInitialImage);
   const [marginPercent, setMarginPercent] = useState(
     initialData?.marginPercent !== undefined ? initialData.marginPercent : 25
   );
@@ -390,42 +401,56 @@ export default function InvoiceForm({ initialData, onSaveSuccess, onCancel }) {
             );
           })()}
 
-          {/* Order Design Reference Image Preview (if present) */}
-          {imageUrl && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '16px',
-              padding: '14px 18px',
-              background: 'rgba(245, 158, 11, 0.08)',
-              border: '1px solid rgba(245, 158, 11, 0.25)',
-              borderRadius: 'var(--radius-md)',
-              marginBottom: '20px'
-            }}>
-              <img
-                src={imageUrl}
-                alt="Order Design Reference"
-                style={{
-                  width: '64px',
-                  height: '64px',
-                  objectFit: 'contain',
-                  background: '#ffffff',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-subtle)',
-                  padding: '2px',
-                  flexShrink: 0
-                }}
-              />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--accent-gold)' }}>
-                  Attached Design Image
-                </div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                  This image reference is linked to this order and will appear on the final invoice document & printouts.
+          {/* Order Design Reference Image Preview with Placeholder Fallback */}
+          {(() => {
+            const hasReal = Boolean(imageUrl);
+            const displaySrc = hasReal
+              ? (imageUrl.startsWith('http') ? `/api/media/proxy?url=${encodeURIComponent(imageUrl)}` : imageUrl)
+              : '/placeholder-design.svg';
+
+            return (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '16px',
+                padding: '14px 18px',
+                background: hasReal ? 'rgba(245, 158, 11, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                border: hasReal ? '1px solid rgba(245, 158, 11, 0.25)' : '1px dashed rgba(148, 163, 184, 0.25)',
+                borderRadius: 'var(--radius-md)',
+                marginBottom: '20px'
+              }}>
+                <img
+                  src={displaySrc}
+                  alt="Order Design Reference"
+                  style={{
+                    width: '64px',
+                    height: '64px',
+                    objectFit: 'cover',
+                    background: '#0f172a',
+                    borderRadius: '8px',
+                    border: hasReal ? '1.5px solid rgba(245, 158, 11, 0.6)' : '1px dashed rgba(148, 163, 184, 0.4)',
+                    padding: '2px',
+                    flexShrink: 0
+                  }}
+                  onError={(e) => {
+                    if (e.target.src !== window.location.origin + '/placeholder-design.svg') {
+                      e.target.src = '/placeholder-design.svg';
+                    }
+                  }}
+                />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '0.88rem', fontWeight: 600, color: hasReal ? 'var(--accent-gold)' : 'var(--text-secondary)' }}>
+                    {hasReal ? 'Attached Order Design Artwork' : 'Standard Embroidery Artwork (Placeholder)'}
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    {hasReal
+                      ? 'This artwork reference is linked to this order and will appear on the final invoice & share card.'
+                      : 'No custom photo attached to this order. The standard CJS Designs artwork will appear on the invoice & WhatsApp share card.'}
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Internal Metrics & Cost Inputs */}
           <div style={{

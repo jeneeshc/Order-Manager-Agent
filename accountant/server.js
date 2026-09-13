@@ -57,6 +57,27 @@ function getCollectionName(sheetName) {
   return map[sheetName] || sheetName.toLowerCase().replace(/[\s-]+/g, '_');
 }
 
+// API: Media Image Proxy (Bypasses CORS for html2canvas, prevents canvas tainting)
+app.get('/api/media/proxy', async (req, res) => {
+  const imageUrl = req.query.url;
+  if (!imageUrl) return res.status(400).send('Missing url parameter');
+  try {
+    const upstream = await fetch(imageUrl);
+    if (!upstream.ok) {
+      return res.status(upstream.status).send('Failed to fetch image');
+    }
+    const contentType = upstream.headers.get('content-type') || 'image/jpeg';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    const arrayBuffer = await upstream.arrayBuffer();
+    return res.send(Buffer.from(arrayBuffer));
+  } catch (err) {
+    console.error('[ImageProxy] Error fetching upstream image:', err.message);
+    return res.status(500).send('Image proxy error');
+  }
+});
+
 // API: Test Connection & Get Database Metadata
 app.get('/api/sheets/status', async (req, res) => {
   try {
@@ -279,8 +300,9 @@ app.get('/api/sheets/bootstrap', async (req, res) => {
         'Reasoning': data.reasoning || '',
         overrides: data.overrides || '',
         'Overrides': data.overrides || '',
-        imageUrl: data.image_url || '',
-        'Image URL': data.image_url || ''
+        imageUrl: data.image_url || data.imageUrl || data['Image URL'] || '',
+        'Image URL': data.image_url || data.imageUrl || data['Image URL'] || '',
+        image_url: data.image_url || data.imageUrl || data['Image URL'] || ''
       };
     });
 
@@ -360,8 +382,9 @@ app.get('/api/sheets/orders', async (req, res) => {
         'Estimated Cost': data.estimated_cost || '',
         'Payment Status': data.payment_status || 'Estimated',
         'Reasoning': data.reasoning || '',
-        'Overrides': data.overrides || '',
-        'Image URL': data.image_url || ''
+        'Image URL': data.image_url || data.imageUrl || data['Image URL'] || '',
+        imageUrl: data.image_url || data.imageUrl || data['Image URL'] || '',
+        image_url: data.image_url || data.imageUrl || data['Image URL'] || ''
       };
     });
     return res.json({ success: true, orders });

@@ -30,8 +30,14 @@ export default function OrdersManager({ onGenerateInvoice }) {
   const [selectedReasoningOrder, setSelectedReasoningOrder] = useState(null);
   const [updatingOrderId, setUpdatingOrderId] = useState(null);
 
-  // Subscribe to storage changes
+  // Subscribe to storage changes & pull fresh orders on mount
   useEffect(() => {
+    googleSheetsService.fetchOrders().then(fresh => {
+      if (fresh && fresh.length > 0) {
+        setOrders(fresh);
+      }
+    }).catch(() => {});
+
     return storageService.subscribe(() => {
       setOrders(storageService.getOrders());
       setCustomers(storageService.getCustomers());
@@ -91,7 +97,7 @@ export default function OrdersManager({ onGenerateInvoice }) {
       laborHours: lHrs,
       estimatedCost: parseCurrency(order.estimatedCost),
       status: 'Pending',
-      imageUrl: order.imageUrl || order['Image URL'] || ''
+      imageUrl: order.imageUrl || order['Image URL'] || order.image_url || ''
     };
   };
 
@@ -422,28 +428,54 @@ export default function OrdersManager({ onGenerateInvoice }) {
                             <Info size={13} />
                           </button>
                         )}
-                        {order.imageUrl && (
-                          <a
-                            href={order.imageUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title="View design artwork"
-                            style={{ display: 'block', marginTop: '6px' }}
-                          >
-                            <img
-                              src={order.imageUrl}
-                              alt="Design"
-                              style={{
-                                width: '52px',
-                                height: '52px',
-                                objectFit: 'cover',
-                                borderRadius: '6px',
-                                border: '1px solid rgba(245, 158, 11, 0.3)',
-                                opacity: isCancelled ? 0.5 : 1
-                              }}
-                            />
-                          </a>
-                        )}
+                        {/* Design Artwork Thumbnail with Placeholder Fallback */}
+                        {(() => {
+                          const rawImg = order.imageUrl || order['Image URL'] || order.image_url;
+                          const displayImg = rawImg 
+                            ? (rawImg.startsWith('http') ? `/api/media/proxy?url=${encodeURIComponent(rawImg)}` : rawImg)
+                            : '/placeholder-design.svg';
+                          const hasRealImage = Boolean(rawImg);
+
+                          return (
+                            <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <a
+                                href={hasRealImage ? rawImg : '#'}
+                                target={hasRealImage ? "_blank" : "_self"}
+                                rel="noopener noreferrer"
+                                onClick={(e) => { if (!hasRealImage) e.preventDefault(); }}
+                                title={hasRealImage ? "Click to view full size design artwork" : "Standard placeholder (no custom artwork uploaded)"}
+                                style={{ display: 'inline-block', position: 'relative' }}
+                              >
+                                <img
+                                  src={displayImg}
+                                  alt="Design"
+                                  style={{
+                                    width: '52px',
+                                    height: '52px',
+                                    objectFit: 'cover',
+                                    borderRadius: '8px',
+                                    border: hasRealImage 
+                                      ? '1.5px solid rgba(245, 158, 11, 0.7)' 
+                                      : '1px dashed rgba(148, 163, 184, 0.4)',
+                                    background: '#0f172a',
+                                    opacity: isCancelled ? 0.45 : 1,
+                                    boxShadow: '0 2px 6px rgba(0,0,0,0.35)'
+                                  }}
+                                  onError={(e) => {
+                                    if (e.target.src !== window.location.origin + '/placeholder-design.svg') {
+                                      e.target.src = '/placeholder-design.svg';
+                                    }
+                                  }}
+                                />
+                              </a>
+                              {!hasRealImage && (
+                                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                  Default Art
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Date & Delivery Target */}
