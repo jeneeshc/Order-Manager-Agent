@@ -173,22 +173,22 @@ def build_flow_json() -> dict:
                                 {
                                     "type": "TextInput",
                                     "name": "stitch_count",
-                                    "label": "Stitch Count (Optional)",
+                                    "label": "Stitch Count",
                                     "input-type": "number",
                                     "required": False
                                 },
                                 {
                                     "type": "TextInput",
                                     "name": "labor_minutes",
-                                    "label": "Labor Minutes (Optional)",
+                                    "label": "Labor Minutes",
                                     "input-type": "number",
                                     "required": False
                                 },
                                 {
                                     "type": "PhotoPicker",
                                     "name": "photo_picker",
-                                    "label": "Design Image (Max 5MB, Optional)",
-                                    "description": "Or leave empty & send photo in chat (Optional)",
+                                    "label": "Design Image (Max 5MB)",
+                                    "description": "Leave empty or send photo in chat",
                                     "photo-source": "camera_gallery",
                                     "min-uploaded-photos": 0,
                                     "max-uploaded-photos": 1,

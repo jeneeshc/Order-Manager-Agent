@@ -80,14 +80,14 @@ def build_customer_flow_json() -> dict:
                                 {
                                     "type": "TextInput",
                                     "name": "customer_phone",
-                                    "label": "Phone Number (Optional)",
+                                    "label": "Phone Number",
                                     "input-type": "phone",
                                     "required": False
                                 },
                                 {
                                     "type": "TextInput",
                                     "name": "customer_address",
-                                    "label": "Location / Address (Optional)",
+                                    "label": "Location / Address",
                                     "input-type": "text",
                                     "required": False
                                 }
