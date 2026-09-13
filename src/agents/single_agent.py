@@ -54,16 +54,17 @@ VENDORS_MENU_TEXT = (
 import time
 
 def date_to_ms(d_str: str) -> str:
+    tomorrow = (datetime.date.today() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
     if not d_str:
-        return str(int(time.time() * 1000))
+        return tomorrow
     s = str(d_str).strip()
     for fmt in ("%Y-%m-%d", "%d-%b-%Y", "%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d"):
         try:
             dt = datetime.datetime.strptime(s, fmt)
-            return str(int(dt.timestamp() * 1000))
+            return dt.strftime("%Y-%m-%d")
         except ValueError:
             continue
-    return str(int(time.time() * 1000))
+    return tomorrow
 
 def sanitize_customer_name(name: Optional[str]) -> Optional[str]:
     if not name:
@@ -491,15 +492,16 @@ class CJSSingleAgent:
         if ((raw_msg == "1" and state.active_menu in ("MAIN", None))
                 or (msg_lower in {"new order", "create order", "order form", "open form"} and state.active_menu in ("MAIN", None))):
             state.editing_order_id = None
+            tomorrow = (datetime.date.today() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
             state.flow_init_data = {
                 "editing_order_id": "",
                 "init_customer": "",
                 "init_order_type": "",
                 "init_template": "",
                 "init_quantity": 1,
-                "init_delivery_date": str(int(time.time() * 1000)),
-                "init_stitch_count": None,
-                "init_labor_minutes": None
+                "init_delivery_date": tomorrow,
+                "init_stitch_count": 0,
+                "init_labor_minutes": 0
             }
             state.send_order_form = True
             state.active_menu = None

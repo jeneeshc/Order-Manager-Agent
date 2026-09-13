@@ -100,7 +100,7 @@ def build_flow_json() -> dict:
                     },
                     "init_delivery_date": {
                         "type": "string",
-                        "__example__": "1788672000000"
+                        "__example__": "2026-09-14"
                     },
                     "init_stitch_count": {
                         "type": "number",
@@ -192,7 +192,7 @@ def build_flow_json() -> dict:
                                     "photo-source": "camera_gallery",
                                     "min-uploaded-photos": 0,
                                     "max-uploaded-photos": 1,
-                                    "max-file-size-kb": 10240
+                                    "max-file-size-kb": 25600
                                 }
                             ]
                         },
