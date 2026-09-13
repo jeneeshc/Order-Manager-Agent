@@ -133,7 +133,6 @@ function MainApp() {
     return <PinLockScreen onUnlock={() => setIsUnlocked(true)} />;
   }
 
-  const isSheetConnected = Boolean(settings.useGoogleSheets && settings.googleScriptUrl);
 
   return (
     <div className="app-container" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
@@ -144,8 +143,6 @@ function MainApp() {
         onLock={() => setIsUnlocked(false)}
         onOpenNewInvoice={handleOpenNewInvoice}
         onOpenNewExpense={handleOpenNewExpense}
-        onOpenSettings={() => setShowSettings(true)}
-        isSheetConnected={isSheetConnected}
       />
 
       {/* Main Content Area */}

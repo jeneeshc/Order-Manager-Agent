@@ -1,64 +1,31 @@
 import React from 'react';
 import { 
   LayoutDashboard, 
-  Calculator, 
   ReceiptText, 
   Wallet, 
   Landmark, 
   SlidersHorizontal, 
   Lock, 
   PlusCircle, 
-  CloudCheck, 
-  CloudOff,
-  Sparkles,
-  ArrowUpRight,
-  Bot,
-  RefreshCw,
   Package
 } from 'lucide-react';
 import { storageService } from '../../services/storageService';
-import { googleSheetsService } from '../../services/googleSheetsService';
 
 export default function Navbar({ 
   activeTab, 
   setActiveTab, 
   onLock, 
   onOpenNewInvoice, 
-  onOpenNewExpense, 
-  onOpenSettings,
-  isSheetConnected
+  onOpenNewExpense
 }) {
   const config = storageService.getConfig();
   const [estimatedCount, setEstimatedCount] = React.useState(() => storageService.getEstimatedOrdersCount());
-  const [isSyncing, setIsSyncing] = React.useState(googleSheetsService.isSyncing);
-  const [backendAvailable, setBackendAvailable] = React.useState(googleSheetsService.backendAvailable);
 
   React.useEffect(() => {
-    const unsubStorage = storageService.subscribe(() => {
+    return storageService.subscribe(() => {
       setEstimatedCount(storageService.getEstimatedOrdersCount());
     });
-    const unsubSheets = googleSheetsService.subscribe((event, data, meta) => {
-      if (meta) {
-        setIsSyncing(meta.isSyncing);
-        setBackendAvailable(meta.backendAvailable);
-      }
-    });
-    return () => {
-      unsubStorage();
-      unsubSheets();
-    };
   }, []);
-
-  const handleSyncSheets = async () => {
-    try {
-      setIsSyncing(true);
-      await googleSheetsService.syncAll(true);
-    } catch (err) {
-      alert('Failed to sync with Google Sheets: ' + (err.message || 'Check server connection'));
-    } finally {
-      setIsSyncing(false);
-    }
-  };
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -126,18 +93,8 @@ export default function Navbar({
               </div>
             </div>
 
-            {/* Right Side: Settings & Lock Icons */}
+            {/* Right Side: Lock Icon */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              {/* Settings Icon */}
-              <button
-                className="btn btn-ghost"
-                style={{ padding: '8px', borderRadius: 'var(--radius-md)' }}
-                onClick={onOpenSettings}
-                title="Settings & Config"
-              >
-                <SlidersHorizontal size={18} />
-              </button>
-
               {/* Lock Session */}
               <button
                 className="btn btn-ghost"
@@ -210,7 +167,7 @@ export default function Navbar({
               })}
             </div>
 
-            {/* 3 Action Buttons: New Invoice, Log Expense, Sync Sheets */}
+            {/* Action Buttons: New Invoice, Log Expense */}
             <div className="header-actions-row" style={{
               display: 'flex',
               alignItems: 'center',
@@ -235,33 +192,6 @@ export default function Navbar({
               >
                 <PlusCircle size={15} />
                 <span>+ Log Expense</span>
-              </button>
-
-              {/* Google Sheets Live Sync Button */}
-              <button
-                className="btn btn-secondary"
-                style={{ 
-                  padding: '7px 12px', 
-                  fontSize: '0.82rem',
-                  border: isSyncing ? '1px solid var(--accent-gold)' : undefined
-                }}
-                onClick={handleSyncSheets}
-                disabled={isSyncing}
-                title="Click to pull latest data from Google Sheets"
-              >
-                <RefreshCw 
-                  size={14} 
-                  style={{ 
-                    animation: isSyncing ? 'spin 1s linear infinite' : 'none',
-                    color: backendAvailable ? 'var(--accent-emerald)' : 'var(--accent-gold)'
-                  }} 
-                />
-                <span style={{ 
-                  color: backendAvailable ? 'var(--accent-emerald)' : 'var(--accent-gold)', 
-                  fontWeight: 600 
-                }}>
-                  {isSyncing ? 'Syncing...' : (backendAvailable ? 'Sync Sheets' : 'Sync Offline')}
-                </span>
               </button>
             </div>
           </div>

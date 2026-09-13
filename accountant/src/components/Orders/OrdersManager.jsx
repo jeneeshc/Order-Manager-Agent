@@ -5,7 +5,6 @@ import {
   Search, 
   RefreshCw, 
   Receipt, 
-  CheckCircle2, 
   Clock, 
   Sparkles, 
   Layers, 
@@ -16,9 +15,7 @@ import {
   Info, 
   ChevronRight, 
   FileText,
-  AlertCircle,
   ExternalLink,
-  Check,
   XCircle,
   RotateCcw
 } from 'lucide-react';
@@ -29,9 +26,7 @@ export default function OrdersManager({ onGenerateInvoice }) {
   const [orders, setOrders] = useState(() => storageService.getOrders());
   const [customers, setCustomers] = useState(() => storageService.getCustomers());
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterStatus, setFilterStatus] = useState('Estimated'); // Default to Estimated as per user requirement
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncFeedback, setSyncFeedback] = useState(null);
+  const [filterStatus, setFilterStatus] = useState('Estimated');
   const [selectedReasoningOrder, setSelectedReasoningOrder] = useState(null);
   const [updatingOrderId, setUpdatingOrderId] = useState(null);
 
@@ -42,26 +37,6 @@ export default function OrdersManager({ onGenerateInvoice }) {
       setCustomers(storageService.getCustomers());
     });
   }, []);
-
-  // Fetch fresh orders from Google Sheets on initial mount
-  useEffect(() => {
-    handleSyncOrders();
-  }, []);
-
-  const handleSyncOrders = async () => {
-    setIsSyncing(true);
-    try {
-      const freshOrders = await googleSheetsService.fetchOrders();
-      setOrders(freshOrders || []);
-      setSyncFeedback({ type: 'success', message: 'Orders synced with Google Sheets!' });
-      setTimeout(() => setSyncFeedback(null), 3000);
-    } catch (e) {
-      setSyncFeedback({ type: 'error', message: 'Failed to sync with Google Sheet' });
-      setTimeout(() => setSyncFeedback(null), 4000);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
 
   // Helper to map Customer ID & Name to Customer Details
   const resolveCustomer = (customerId, customerName = '', orderPhone = '') => {
@@ -135,29 +110,15 @@ export default function OrdersManager({ onGenerateInvoice }) {
     return !isOrderComplete(status) && !isOrderCancelled(status);
   };
 
-  // Update order status handler (Estimated | Complete | Cancelled)
+  // Update order status handler (Estimated | Cancelled)
   const handleUpdateStatus = async (order, newStatus) => {
     setUpdatingOrderId(order.id);
     try {
       storageService.updateOrderStatus(order.id, newStatus);
       setOrders(storageService.getOrders());
-
-      const result = await googleSheetsService.updateOrderStatus(order.id, newStatus);
-      if (result && result.success) {
-        setSyncFeedback({
-          type: 'success',
-          message: `Order ${order.id} status updated to "${newStatus}" in Google Sheets!`
-        });
-      } else {
-        setSyncFeedback({
-          type: 'warning',
-          message: `Updated locally. Sheet sync: ${result?.error || 'Check Google Sheet connection'}`
-        });
-      }
-      setTimeout(() => setSyncFeedback(null), 4000);
+      googleSheetsService.updateOrderStatus(order.id, newStatus).catch(() => {});
     } catch (err) {
-      setSyncFeedback({ type: 'error', message: `Error updating status: ${err.message}` });
-      setTimeout(() => setSyncFeedback(null), 4000);
+      console.warn('Status update error:', err);
     } finally {
       setUpdatingOrderId(null);
     }
@@ -226,24 +187,7 @@ export default function OrdersManager({ onGenerateInvoice }) {
         </div>
       </div>
 
-      {/* Sync Status Banner */}
-      {syncFeedback && (
-        <div style={{
-          padding: '12px 18px',
-          borderRadius: 'var(--radius-md)',
-          marginBottom: '20px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          background: syncFeedback.type === 'success' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-          border: `1px solid ${syncFeedback.type === 'success' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
-          color: syncFeedback.type === 'success' ? '#34d399' : '#fbbf24',
-          fontSize: '0.88rem'
-        }}>
-          {syncFeedback.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
-          <span>{syncFeedback.message}</span>
-        </div>
-      )}
+
 
       {/* Top Stat KPI Cards */}
       <div style={{
@@ -425,7 +369,7 @@ export default function OrdersManager({ onGenerateInvoice }) {
                     <div style={{ fontSize: '0.82rem', marginTop: '4px' }}>
                       {filterStatus === 'Estimated'
                         ? 'All orders from the AI Agent have been invoiced, completed, or archived.'
-                        : 'Try selecting a different status filter or sync with Google Sheets.'}
+                        : 'Try selecting a different status filter above.'}
                     </div>
                   </td>
                 </tr>
@@ -462,22 +406,20 @@ export default function OrdersManager({ onGenerateInvoice }) {
                           <button
                             type="button"
                             onClick={() => setSelectedReasoningOrder(order)}
+                            title="View AI Agent decision log"
                             style={{
                               background: 'transparent',
                               border: 'none',
                               color: 'var(--text-muted)',
-                              fontSize: '0.72rem',
                               display: 'inline-flex',
                               alignItems: 'center',
-                              gap: '4px',
                               cursor: 'pointer',
-                              padding: 0,
+                              padding: '2px 4px',
                               marginTop: '4px',
-                              textDecoration: 'underline'
+                              borderRadius: '4px'
                             }}
                           >
-                            <Info size={12} />
-                            <span>AI Reasoning</span>
+                            <Info size={13} />
                           </button>
                         )}
                       </td>
@@ -603,23 +545,6 @@ export default function OrdersManager({ onGenerateInvoice }) {
                               >
                                 <Receipt size={14} />
                                 <span>Generate Invoice</span>
-                              </button>
-
-                              {/* Mark Complete Button */}
-                              <button
-                                type="button"
-                                className="btn btn-emerald"
-                                style={{ padding: '6px 12px', fontSize: '0.82rem' }}
-                                onClick={() => handleUpdateStatus(order, 'Complete')}
-                                disabled={isUpdating}
-                                title="Payment received: Click to update Google Sheet to Complete"
-                              >
-                                {isUpdating ? (
-                                  <RefreshCw size={14} className="spin-animation" />
-                                ) : (
-                                  <Check size={14} />
-                                )}
-                                <span>{isUpdating ? 'Saving...' : 'Mark Complete'}</span>
                               </button>
 
                               {/* Cancel Button */}
