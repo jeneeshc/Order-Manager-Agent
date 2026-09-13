@@ -29,6 +29,38 @@ class WhatsAppService:
         except Exception as e:
             print(f"[WhatsApp] Failed to send message: {e}")
             return False
+
+    def send_image_message(self, recipient_number: str, image_id_or_url: str, caption: str = ""):
+        """
+        Sends an image message with optional caption to recipient.
+        image_id_or_url can be either a WhatsApp Cloud API Media ID or an HTTP(S) URL.
+        """
+        image_payload = {}
+        if str(image_id_or_url).startswith("http://") or str(image_id_or_url).startswith("https://"):
+            image_payload["link"] = str(image_id_or_url)
+        else:
+            image_payload["id"] = str(image_id_or_url)
+        
+        if caption:
+            image_payload["caption"] = caption
+
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": recipient_number,
+            "type": "image",
+            "image": image_payload
+        }
+        try:
+            response = requests.post(self.base_url, headers=self.headers, json=payload)
+            response.raise_for_status()
+            print(f"[WhatsApp] Sent image message to {recipient_number}: {response.status_code}")
+            return True
+        except Exception as e:
+            print(f"[WhatsApp] Failed to send image message: {e}")
+            if hasattr(e, 'response') and e.response:
+                print(f"[WhatsApp] Error detail: {e.response.text}")
+            return False
+
     def send_flow_message(
         self,
         recipient_number: str,

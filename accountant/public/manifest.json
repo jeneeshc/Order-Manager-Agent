@@ -1,0 +1,18 @@
+{
+  "name": "CJS Designs Accounting",
+  "short_name": "CJS Accountant",
+  "description": "Accounting, Pricing Calculator, Invoicing, and Expense Management for CJS Designs",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0f19",
+  "theme_color": "#0b0f19",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/siteIcon.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

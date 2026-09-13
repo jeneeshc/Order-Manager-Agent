@@ -1,0 +1,6 @@
+node_modules
+dist
+.git
+.gitignore
+service-account-key.json
+npm-debug.log

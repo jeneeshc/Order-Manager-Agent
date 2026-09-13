@@ -22,8 +22,9 @@ def test_config_variables_parsing():
         mock_get = MagicMock()
         mock_get.execute.return_value = {"values": mock_values}
         svc.service.spreadsheets().values().get.return_value = mock_get
+        GoogleSheetsService._config_cache = None
         
-        config = svc.get_config_variables()
+        config = svc.get_config_variables(force_refresh=True)
         assert config["Cost per 1000 Stitches"] == 10
         assert config["Hourly Labor Rate"] == 100
         assert config["GST Rate Percent"] == 18

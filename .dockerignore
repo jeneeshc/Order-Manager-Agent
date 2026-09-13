@@ -1,0 +1,13 @@
+venv/
+.venv/
+env/
+__pycache__/
+*.pyc
+*.key.json
+service-account-key.json
+credentials.json
+.env
+accountant/
+.git
+.gitignore
+.pytest_cache/

@@ -12,3 +12,5 @@ fal-client>=0.13.0
 pydantic
 requests
 python-dotenv
+google-cloud-storage
+google-cloud-firestore

@@ -12,7 +12,8 @@ import threading
 # Internal imports
 from src.services.whatsapp import WhatsAppService
 from src.services.memory import MemoryService
-from src.services.sheets import GoogleSheetsService
+from src.services.db import FirestoreDatabaseService
+from src.services.storage import CloudStorageService
 from src.agents.state import AgentState
 from src.agents.agent_6_secretary import SecretaryAgent
 from src.workflow.main_graph import cjs_bot
@@ -31,7 +32,8 @@ IST = pytz.timezone("Asia/Kolkata")
 # Initialize services
 whatsapp_service = WhatsAppService()
 memory_service = MemoryService()
-db_service = GoogleSheetsService()
+db_service = FirestoreDatabaseService()
+storage_service = CloudStorageService()
 secretary_agent = SecretaryAgent()
 
 # Scheduler (fires at 6:00 AM IST daily)
@@ -173,6 +175,64 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                     memory_service.clear_state(sender_phone)
                     return
 
+                # 1.5.C Handle Standalone WhatsApp Image Upload (e.g. sent directly in chat with Order ID caption)
+                if (
+                    interactive_payload
+                    and "photo_picker" in interactive_payload
+                    and "customer_select" not in interactive_payload
+                    and "customer_name" not in interactive_payload
+                ):
+                    raw_photos = interactive_payload.get("photo_picker") or []
+                    if raw_photos:
+                        photo_id = raw_photos[0].get("id")
+                        mime_type = raw_photos[0].get("mime_type", "image/jpeg")
+                        import re
+                        match = re.search(r'\b(CJS-[A-Za-z0-9]+)\b', text_body, re.I)
+                        target_order_id = match.group(1).upper() if match else None
+
+                        if target_order_id:
+                            order_data = db_service.get_order(target_order_id)
+                            if order_data:
+                                img_bytes, downloaded_mime = whatsapp_service.download_media(photo_id)
+                                if img_bytes:
+                                    storage_res = storage_service.upload_order_image(
+                                        order_id=target_order_id,
+                                        image_bytes=img_bytes,
+                                        mime_type=downloaded_mime or mime_type,
+                                        filename=f"{target_order_id}.jpg"
+                                    )
+                                    if storage_res:
+                                        img_url = storage_res.get("public_url") or storage_res.get("view_link")
+                                        db_service.update_order_field(target_order_id, "image_url", img_url)
+                                        confirm_reply = (
+                                            f"✅ Order Updated: {target_order_id}\n\n"
+                                            f"* Customer: {order_data.get('customer')}\n"
+                                            f"* Order Type: {order_data.get('order_type')}\n"
+                                            f"* Template: {order_data.get('template')}\n"
+                                            f"* Quantity: {order_data.get('quantity')} pcs\n"
+                                            f"* Est. Delivery Date: {order_data.get('delivery_date')}\n"
+                                            f"* Total Amount: {order_data.get('cost')}\n"
+                                            f"* Design Image: {img_url}"
+                                        )
+                                        whatsapp_service.send_text_message(sender_phone, confirm_reply)
+                                        memory_service.clear_state(sender_phone)
+                                        return
+                            else:
+                                whatsapp_service.send_text_message(
+                                    sender_phone,
+                                    f"⚠️ Order *{target_order_id}* was not found in Google Sheets. Please check the Order ID."
+                                )
+                                memory_service.clear_state(sender_phone)
+                                return
+                        else:
+                            whatsapp_service.send_text_message(
+                                sender_phone,
+                                "📸 *Image Received!*\n"
+                                "To attach this image to an existing order, please include the *Order ID* in the caption (e.g. `CJS-ABC123`), or reply *'1'* to create a new order."
+                            )
+                            memory_service.clear_state(sender_phone)
+                            return
+
                 # 1.5.B Handle Order Creation / Edit Flow Submission
                 # 1. Customer Name Resolution
                 selected_cust = interactive_payload.get("customer_select")
@@ -297,6 +357,36 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                 # Bypasses multi-agent LLM loops to achieve sub-second response latency
                 if initial_state.customer_name and not initial_state.is_missing_info:
                     print(f"[FAST-PATH] Executing deterministic pipeline for form submission (0 LLM overhead)...")
+                    if initial_state.editing_order_id:
+                        order_id = initial_state.editing_order_id
+                    else:
+                        import uuid
+                        order_id = getattr(initial_state, "order_id", None) or f"CJS-{str(uuid.uuid4())[:6].upper()}"
+                    initial_state.order_id = order_id
+
+                    # 8. Handle optional PhotoPicker upload from camera / WhatsApp gallery
+                    raw_photos = interactive_payload.get("photo_picker") or []
+                    if isinstance(raw_photos, list) and len(raw_photos) > 0:
+                        photo_info = raw_photos[0]
+                        media_id = photo_info.get("id")
+                        mime_type = photo_info.get("mime_type", "image/jpeg")
+                        file_name = photo_info.get("file_name", f"{order_id}.jpg")
+                        if media_id:
+                            print(f"[FAST-PATH] Downloading photo {media_id} for order {order_id}...")
+                            img_bytes, downloaded_mime = whatsapp_service.download_media(media_id)
+                            if img_bytes:
+                                print(f"[FAST-PATH] Uploading photo to Cloud Storage under monthly folder...")
+                                storage_res = storage_service.upload_order_image(
+                                    order_id=order_id,
+                                    image_bytes=img_bytes,
+                                    mime_type=downloaded_mime or mime_type,
+                                    filename=file_name
+                                )
+                                if storage_res:
+                                    initial_state.image_url = storage_res.get("public_url") or storage_res.get("view_link")
+                                    initial_state.image_drive_id = storage_res.get("file_id")
+                                    initial_state.image_media_id = media_id
+
                     from src.agents.agent_2_scheduler import ProductionSchedulerAgent
                     from src.agents.agent_3_estimator import EstimationAgent
 
@@ -307,46 +397,49 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                     initial_state = estimator.process(initial_state)
 
                     if initial_state.editing_order_id:
-                        order_id = initial_state.editing_order_id
-                        initial_state.order_id = order_id
                         db_service.update_order_from_form(order_id, initial_state)
-                        confirm_reply = (
-                            f"✅ *Order Updated: {order_id}* 🧵\n\n"
-                            f"• *Customer:* {initial_state.customer_name}\n"
-                            f"• *Order Type:* {initial_state.order_type}\n"
-                            f"• *Template:* {initial_state.template_name}\n"
-                            f"• *Quantity:* {initial_state.quantity} pcs\n"
-                            f"• *Assigned Machine:* {initial_state.machine_assigned}\n"
-                            f"• *Est. Delivery Date:* {initial_state.estimated_completion_date}\n\n"
-                            f"💰 *Updated Cost Breakdown:*\n"
-                            f"• Base Cost: Rs {initial_state.base_cost_rs or 0}\n"
-                            f"• Profit Margin ({initial_state.profit_margin_pct or 20}%): Rs {initial_state.profit_margin_rs or 0}\n"
-                            f"• GST ({initial_state.gst_rate_pct or 18}%): Rs {initial_state.gst_amount_rs or 0}\n"
-                            f"• *Total Amount: Rs {initial_state.total_cost_rs or 0}*\n\n"
-                            f"Status: *Updated in Google Sheets*! 👍\n"
-                            f"Reply *'Hi'* anytime for the main menu."
-                        )
                     else:
-                        order_id = db_service.append_order(initial_state)
-                        initial_state.order_id = order_id
-                        confirm_reply = (
-                            f"✅ *New Order Created: {order_id}* 🧵\n\n"
-                            f"• *Customer:* {initial_state.customer_name}\n"
-                            f"• *Order Type:* {initial_state.order_type}\n"
-                            f"• *Template:* {initial_state.template_name}\n"
-                            f"• *Quantity:* {initial_state.quantity} pcs\n"
-                            f"• *Assigned Machine:* {initial_state.machine_assigned}\n"
-                            f"• *Est. Delivery Date:* {initial_state.estimated_completion_date}\n\n"
-                            f"💰 *Cost Breakdown:*\n"
-                            f"• Base Cost: Rs {initial_state.base_cost_rs or 0}\n"
-                            f"• Profit Margin ({initial_state.profit_margin_pct or 20}%): Rs {initial_state.profit_margin_rs or 0}\n"
-                            f"• GST ({initial_state.gst_rate_pct or 18}%): Rs {initial_state.gst_amount_rs or 0}\n"
-                            f"• *Total Amount: Rs {initial_state.total_cost_rs or 0}*\n\n"
-                            f"Status: *Estimated* | Saved to Google Sheets! 👍\n"
-                            f"Reply *'Hi'* anytime for the main menu."
+                        db_service.append_order(initial_state)
+
+                    header = f"✅ Order Updated: {order_id}" if initial_state.editing_order_id else f"✅ New Order Created: {order_id}"
+                    delivery_date = initial_state.estimated_completion_date or initial_state.requested_delivery_date or "To be confirmed"
+                    total_cost_val = initial_state.total_cost_rs or 0
+                    if isinstance(total_cost_val, (int, float)) and float(total_cost_val).is_integer():
+                        total_cost_str = f"Rs {int(total_cost_val)}"
+                    else:
+                        total_cost_str = f"Rs {round(float(total_cost_val), 2)}"
+
+                    # Response formatted to be forwarded directly to customer:
+                    confirm_reply = (
+                        f"{header}\n\n"
+                        f"* Customer: {initial_state.customer_name}\n"
+                        f"* Order Type: {initial_state.order_type}\n"
+                        f"* Template: {initial_state.template_name}\n"
+                        f"* Quantity: {initial_state.quantity} pcs\n"
+                        f"* Est. Delivery Date: {delivery_date}\n"
+                        f"* Total Amount: {total_cost_str}"
+                    )
+                    if initial_state.image_url:
+                        confirm_reply += f"\n* Design Image: {initial_state.image_url}"
+
+                    print(f"[FAST-PATH] Sending customer-forwardable confirmation to {sender_phone} for {order_id}")
+                    if initial_state.image_media_id:
+                        whatsapp_service.send_image_message(
+                            sender_phone,
+                            initial_state.image_media_id,
+                            caption=confirm_reply
                         )
-                    print(f"[FAST-PATH] Sending instant confirmation to {sender_phone} for {order_id}")
-                    whatsapp_service.send_text_message(sender_phone, confirm_reply)
+                    elif initial_state.image_url and (str(initial_state.image_url).startswith("http://") or str(initial_state.image_url).startswith("https://")):
+                        sent = whatsapp_service.send_image_message(
+                            sender_phone,
+                            initial_state.image_url,
+                            caption=confirm_reply
+                        )
+                        if not sent:
+                            whatsapp_service.send_text_message(sender_phone, confirm_reply)
+                    else:
+                        whatsapp_service.send_text_message(sender_phone, confirm_reply)
+
                     memory_service.clear_state(sender_phone)
                     return
 
@@ -487,6 +580,17 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks = N
                                     text_body = "[FORM_SUBMITTED]"
                                 except json.JSONDecodeError:
                                     pass
+                        elif msg_type == "image":
+                            img_obj = message.get("image", {})
+                            caption = img_obj.get("caption", "")
+                            text_body = caption or "[IMAGE_RECEIVED]"
+                            interactive_payload = {
+                                "photo_picker": [{
+                                    "id": img_obj.get("id"),
+                                    "mime_type": img_obj.get("mime_type", "image/jpeg"),
+                                    "file_name": f"{img_obj.get('id')}.jpg"
+                                }]
+                            }
                         
                         if not text_body:
                             continue

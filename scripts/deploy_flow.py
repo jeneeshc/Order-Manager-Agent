@@ -183,6 +183,16 @@ def build_flow_json() -> dict:
                                     "label": "Labor Minutes (Optional)",
                                     "input-type": "number",
                                     "required": False
+                                },
+                                {
+                                    "type": "PhotoPicker",
+                                    "name": "photo_picker",
+                                    "label": "Design / Embroidery Image",
+                                    "description": "Upload from gallery or capture with camera (Optional)",
+                                    "photo-source": "camera_gallery",
+                                    "min-uploaded-photos": 0,
+                                    "max-uploaded-photos": 1,
+                                    "max-file-size-kb": 10240
                                 }
                             ]
                         },
@@ -199,7 +209,8 @@ def build_flow_json() -> dict:
                                     "delivery_date": "${form.delivery_date}",
                                     "stitch_count": "${form.stitch_count}",
                                     "labor_minutes": "${form.labor_minutes}",
-                                    "editing_order_id": "${data.editing_order_id}"
+                                    "editing_order_id": "${data.editing_order_id}",
+                                    "photo_picker": "${form.photo_picker}"
                                 }
                             }
                         }

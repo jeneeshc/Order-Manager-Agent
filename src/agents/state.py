@@ -39,6 +39,9 @@ class AgentState(BaseModel):
     
     # Agent 4 & 5 updates these: Media & Invoicing
     media_assets: List[str] = Field(default_factory=list)
+    image_url: Optional[str] = None
+    image_drive_id: Optional[str] = None
+    image_media_id: Optional[str] = None
     invoice_status: str = Field(default="pending")
     
     # System routing & logging

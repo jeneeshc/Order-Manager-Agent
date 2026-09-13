@@ -211,10 +211,29 @@ class GoogleSheetsService:
             print(f"[SheetsAPI] get_all_customers_map failed: {e}")
             return mapping
 
+    def ensure_orders_image_header(self):
+        """Ensures Column Q of the Orders sheet has the 'Image URL' header."""
+        if not self.service: return
+        try:
+            res = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, range="'Orders'!Q1"
+            ).execute()
+            vals = res.get('values', [])
+            if not vals or not vals[0] or not vals[0][0]:
+                self.service.spreadsheets().values().update(
+                    spreadsheetId=self.spreadsheet_id,
+                    range="'Orders'!Q1",
+                    valueInputOption="USER_ENTERED",
+                    body={'values': [["Image URL"]]}
+                ).execute()
+                print("[SheetsAPI] Added 'Image URL' header to Orders!Q1")
+        except Exception as e:
+            print(f"[SheetsAPI] Note checking Orders!Q1 header: {e}")
+
     def append_order(self, state) -> str:
         """
         Appends the order details from the AgentState into the Google Sheet.
-        Writes across Orders!A:P.
+        Writes across Orders!A:Q (Column Q is Image URL).
         Returns the generated Order ID if successful.
         """
         if not self.service: return None
@@ -224,8 +243,8 @@ class GoogleSheetsService:
             print(f"[SheetsAPI] Append failed: Invalid or missing customer_id '{state.customer_id}'. Customer name is mandatory.")
             return None
         
-        # Generate a unique tracking ID
-        order_id = f"CJS-{str(uuid.uuid4())[:6].upper()}"
+        # Generate or preserve unique tracking ID
+        order_id = getattr(state, "order_id", None) or f"CJS-{str(uuid.uuid4())[:6].upper()}"
         
         # Resolve order type and template name
         order_type = state.order_type or ("Machine Embroidery" if (state.stitch_count and state.stitch_count > 0) else "Embroidery design")
@@ -236,11 +255,13 @@ class GoogleSheetsService:
         if labor_hrs <= 0 and getattr(state, "labor_minutes", None) and float(state.labor_minutes) > 0:
             labor_hrs = round(float(state.labor_minutes) / 60.0, 2)
         
-        # Standard column order (A-P) for Orders tab:
+        image_url = getattr(state, "image_url", None) or ""
+
+        # Standard column order (A-Q) for Orders tab:
         # A: Order Date, B: Order ID, C: Customer ID, D: Customer Name, E: Phone,
         # F: Order Type, G: Template Name, H: Quantity, I: Stitch Count, J: Labor Hours,
         # K: Machine, L: Estimated Delivery Date, M: Estimated Cost, N: Payment Status,
-        # O: Reasoning, P: Overrides
+        # O: Reasoning, P: Overrides, Q: Image URL
         values = [[
             datetime.datetime.now(IST).strftime("%Y-%m-%d %H:%M"),  # A: Order Date
             order_id,                                               # B: Order ID
@@ -257,15 +278,17 @@ class GoogleSheetsService:
             f"Rs {state.total_cost_rs or 0}",                      # M: Estimated Cost
             state.invoice_status or "Estimated",                   # N: Payment Status
             state.aggregated_reasoning or "No logic recorded",      # O: Reasoning
-            ""                                                      # P: Overrides
+            "",                                                     # P: Overrides
+            image_url                                               # Q: Image URL
         ]]
         
         body = {'values': values}
         
         try:
+            self.ensure_orders_image_header()
             result = self.service.spreadsheets().values().append(
                 spreadsheetId=self.spreadsheet_id,
-                range="'Orders'!A:P",
+                range="'Orders'!A:Q",
                 valueInputOption="USER_ENTERED",
                 body=body
             ).execute()
@@ -356,7 +379,7 @@ class GoogleSheetsService:
         try:
             result = self.service.spreadsheets().values().get(
                 spreadsheetId=self.spreadsheet_id,
-                range="'Orders'!A:P"
+                range="'Orders'!A:Q"
             ).execute()
             
             rows = result.get('values', [])
@@ -380,6 +403,7 @@ class GoogleSheetsService:
                         "status":                 row[13] if len(row) > 13 else None,
                         "reasoning":              row[14] if len(row) > 14 else "No historical reasoning log found.",
                         "overrides":              row[15] if len(row) > 15 else None,
+                        "image_url":              row[16] if len(row) > 16 else "",
                     }
             print(f"[SheetsAPI] Order {order_id} not found in database.")
             return None
@@ -529,6 +553,8 @@ class GoogleSheetsService:
             "delivery_date": "L",   # Col L: Delivery Date
             "cost": "M",            # Col M: Cost
             "machine": "K",         # Col K: Machine
+            "image": "Q",           # Col Q: Image URL
+            "image_url": "Q",       # Col Q: Image URL
         }
         
         target_col = FIELD_MAP.get(field.lower().replace(" ", "_"))
@@ -766,7 +792,7 @@ class GoogleSheetsService:
         try:
             customer_map = self.get_all_customers_map()
             result = self.service.spreadsheets().values().get(
-                spreadsheetId=self.spreadsheet_id, range="'Orders'!A:P"
+                spreadsheetId=self.spreadsheet_id, range="'Orders'!A:Q"
             ).execute()
             rows = result.get('values', [])
             target = order_id.strip().upper()
@@ -789,6 +815,7 @@ class GoogleSheetsService:
                         deliv = str(row[11]).strip() if len(row) > 11 else ""
                         cost = str(row[12]).strip() if len(row) > 12 else "Rs 0"
                         reasoning = str(row[14]).strip() if len(row) > 14 else ""
+                        img_url = str(row[16]).strip() if len(row) > 16 else ""
                     else:
                         cid = str(row[2]).strip() if len(row) > 2 else "Unknown"
                         cname = customer_map.get(cid, cid) if len(row) > 2 else "Unknown"
@@ -801,6 +828,7 @@ class GoogleSheetsService:
                         deliv = str(row[8]).strip() if len(row) > 8 else ""
                         cost = str(row[9]).strip() if len(row) > 9 else "Rs 0"
                         reasoning = str(row[11]).strip() if len(row) > 11 else ""
+                        img_url = str(row[16]).strip() if len(row) > 16 else ""
 
                     return {
                         "order_id": str(row[1]).strip(),
@@ -816,7 +844,8 @@ class GoogleSheetsService:
                         "machine": mach,
                         "delivery_date": deliv,
                         "cost": cost,
-                        "reasoning": reasoning
+                        "reasoning": reasoning,
+                        "image_url": img_url
                     }
             return None
         except Exception as e:
@@ -1498,16 +1527,18 @@ class GoogleSheetsService:
                 print(f"[SheetsAPI] Update failed: {order_id} not found.")
                 return False
 
-            # Read existing reasoning to append
+            # Read existing reasoning and image_url to append/preserve
             o_result = self.service.spreadsheets().values().get(
-                spreadsheetId=self.spreadsheet_id, range=f"'Orders'!O{target_row}"
+                spreadsheetId=self.spreadsheet_id, range=f"'Orders'!O{target_row}:Q{target_row}"
             ).execute()
             existing_reasoning = ""
+            existing_image_url = ""
             o_vals = o_result.get('values', [])
             if o_vals and o_vals[0]:
-                existing_reasoning = str(o_vals[0][0])
+                existing_reasoning = str(o_vals[0][0]) if len(o_vals[0]) > 0 else ""
+                existing_image_url = str(o_vals[0][2]) if len(o_vals[0]) > 2 else ""
 
-            # Prepare values for C through P:
+            # Prepare values for C through Q:
             order_type = state.order_type or ("Machine Embroidery" if (state.stitch_count and state.stitch_count > 0) else "Embroidery design")
             template_name = state.template_name or "General"
             qty = int(state.quantity or 1)
@@ -1515,6 +1546,8 @@ class GoogleSheetsService:
             labor_hrs = float(state.labor_hours or 0.0)
             if labor_hrs <= 0 and getattr(state, "labor_minutes", None) and float(state.labor_minutes) > 0:
                 labor_hrs = round(float(state.labor_minutes) / 60.0, 2)
+
+            final_image_url = getattr(state, "image_url", None) or existing_image_url or ""
 
             updated_values = [[
                 state.customer_id or "Unknown",
@@ -1530,12 +1563,14 @@ class GoogleSheetsService:
                 f"Rs {state.total_cost_rs or 0}",
                 state.invoice_status or "Estimated",
                 existing_reasoning + f"\n[Form Edit {datetime.datetime.now(IST).strftime('%Y-%m-%d %H:%M')}]: " + (state.aggregated_reasoning or ""),
-                ""
+                "",
+                final_image_url
             ]]
 
+            self.ensure_orders_image_header()
             self.service.spreadsheets().values().update(
                 spreadsheetId=self.spreadsheet_id,
-                range=f"'Orders'!C{target_row}:P{target_row}",
+                range=f"'Orders'!C{target_row}:Q{target_row}",
                 valueInputOption="USER_ENTERED",
                 body={'values': updated_values}
             ).execute()
