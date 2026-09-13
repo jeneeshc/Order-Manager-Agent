@@ -15,7 +15,7 @@ const PROJECT_ID = process.env.GCP_PROJECT_ID || 'cjs-designs-501004';
 app.use(cors());
 app.use(express.json());
 
-// Initialize Firestore client
+// Initialize Firestore Native Database Client
 let db;
 const keyPath = path.join(__dirname, 'service-account-key.json');
 const rootKeyPath = path.join(__dirname, '..', 'service-account-key.json');
@@ -32,9 +32,9 @@ try {
     // Cloud Run Application Default Credentials
     db = new Firestore({ projectId: PROJECT_ID });
   }
-  console.log(`[Firestore] Connected to project: ${PROJECT_ID}`);
+  console.log(`[Firestore Database] Connected to GCP project: ${PROJECT_ID}`);
 } catch (err) {
-  console.error('[Firestore] Initialization error:', err);
+  console.error('[Firestore Database] Initialization error:', err);
 }
 
 // -----------------------------------------------------------------
@@ -79,17 +79,21 @@ app.get('/api/media/proxy', async (req, res) => {
 });
 
 // API: Test Connection & Get Database Metadata
-app.get('/api/sheets/status', async (req, res) => {
+const handleStatus = async (req, res) => {
   try {
-    if (!db) throw new Error('Firestore client not initialized');
+    if (!db) throw new Error('Firestore database client not initialized');
     const collections = await db.listCollections();
     const tabs = collections.map(c => c.id);
 
     return res.json({
       connected: true,
-      spreadsheetTitle: 'Google Cloud Firestore (Native)',
-      database: 'Firestore',
+      database: 'Firestore (Native Google Cloud)',
       projectId: PROJECT_ID,
+      collections: [
+        'config', 'sales_ledger', 'expense_ledger', 'asset_ledger',
+        'capital_ledger', 'customers', 'vendors', 'description_templates',
+        'orders', 'reminders', 'holidays'
+      ],
       tabs: [
         'Config', 'Sales_Ledger', 'Expense_Ledger', 'Asset_Ledger',
         'Capital_Ledger', 'Customers', 'Vendors', 'Description_Templates',
@@ -99,18 +103,26 @@ app.get('/api/sheets/status', async (req, res) => {
   } catch (err) {
     return res.status(500).json({ connected: false, error: err.message });
   }
-});
+};
+
+app.get('/api/status', handleStatus);
+app.get('/api/db/status', handleStatus);
+app.get('/api/sheets/status', handleStatus); // Backwards-compatibility alias
 
 // API: Initialize Database (No-op since collections are self-provisioning in Firestore)
-app.post('/api/sheets/init', async (req, res) => {
+const handleInit = async (req, res) => {
   return res.json({
     success: true,
     message: 'Google Cloud Firestore database active and self-provisioning'
   });
-});
+};
+
+app.post('/api/init', handleInit);
+app.post('/api/db/init', handleInit);
+app.post('/api/sheets/init', handleInit); // Backwards-compatibility alias
 
 // API: Bootstrap all application data from Firestore in one high-speed call
-app.get('/api/sheets/bootstrap', async (req, res) => {
+const handleBootstrap = async (req, res) => {
   try {
     if (!db) throw new Error('Database not connected');
 
@@ -355,35 +367,58 @@ app.get('/api/sheets/bootstrap', async (req, res) => {
     console.error('[Firestore] Bootstrap error:', err);
     return res.status(500).json({ success: false, error: err.message });
   }
-});
+};
 
-// API: Read all orders
-app.get('/api/sheets/orders', async (req, res) => {
+app.get('/api/bootstrap', handleBootstrap);
+app.get('/api/db/bootstrap', handleBootstrap);
+app.get('/api/sheets/bootstrap', handleBootstrap); // Backwards-compatibility alias
+
+// =================================================================
+// ORDERS & DATABASE REST ENDPOINTS
+// =================================================================
+
+// Handler: Read all orders from Firestore orders collection
+const handleGetOrders = async (req, res) => {
   try {
     const snap = await db.collection('orders').get();
     const orders = snap.docs.map((d, idx) => {
       const data = d.data();
+      const currentStatus = data.payment_status || data.status || 'Estimated';
       return {
         rowIndex: idx + 2,
+        id: data.order_id || d.id,
         'Order ID': data.order_id || d.id,
+        orderDate: data.order_date || '',
         'Order Date': data.order_date || '',
+        customerId: data.customer_id || '',
         'Customer ID': data.customer_id || '',
+        customerName: data.customer_name || '',
         'Customer Name': data.customer_name || '',
+        phone: data.phone || '',
         'Phone': data.phone || '',
+        orderType: data.order_type || '',
         'Order Type': data.order_type || '',
+        templateName: data.template_name || '',
         'Template Name': data.template_name || '',
+        quantity: data.quantity || 1,
         'Quantity': data.quantity || 1,
+        stitchCount: data.stitch_count || 0,
         'Stitch Count': data.stitch_count || 0,
+        laborHours: data.labor_hours || 0,
         'Labor Hours': data.labor_hours || 0,
-        'Labor Minutes': data.labor_minutes !== undefined ? Number(data.labor_minutes) : Math.round(Number(data.labor_hours || 0) * 60),
         laborMinutes: data.labor_minutes !== undefined ? Number(data.labor_minutes) : Math.round(Number(data.labor_hours || 0) * 60),
         'Machine': data.machine || '',
+        estimatedDeliveryDate: data.estimated_delivery_date || '',
         'Estimated Delivery Date': data.estimated_delivery_date || '',
+        estimatedCost: data.estimated_cost || '',
         'Estimated Cost': data.estimated_cost || '',
-        'Payment Status': data.payment_status || 'Estimated',
+        paymentStatus: currentStatus,
+        'Payment Status': currentStatus,
+        status: currentStatus,
+        reasoning: data.reasoning || '',
         'Reasoning': data.reasoning || '',
-        'Image URL': data.image_url || data.imageUrl || data['Image URL'] || '',
         imageUrl: data.image_url || data.imageUrl || data['Image URL'] || '',
+        'Image URL': data.image_url || data.imageUrl || data['Image URL'] || '',
         image_url: data.image_url || data.imageUrl || data['Image URL'] || ''
       };
     });
@@ -391,10 +426,13 @@ app.get('/api/sheets/orders', async (req, res) => {
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }
-});
+};
 
-// API: Update order status (instant 10ms execution)
-app.post('/api/sheets/orders/status', async (req, res) => {
+app.get('/api/orders', handleGetOrders);
+app.get('/api/sheets/orders', handleGetOrders); // Backwards-compatibility alias
+
+// Handler: Update order status (instant 10ms execution in Firestore)
+const handleUpdateOrderStatus = async (req, res) => {
   try {
     const { orderId, status } = req.body;
     if (!orderId || !status) {
@@ -402,15 +440,27 @@ app.post('/api/sheets/orders/status', async (req, res) => {
     }
 
     const cleanId = String(orderId).trim();
-    let docRef = db.collection('orders').document(cleanId);
+    let docRef = db.collection('orders').doc(cleanId);
     let docSnap = await docRef.get();
     if (!docSnap.exists) {
-      const upperRef = db.collection('orders').document(cleanId.toUpperCase());
+      const upperRef = db.collection('orders').doc(cleanId.toUpperCase());
       const upperSnap = await upperRef.get();
       if (upperSnap.exists) {
         docRef = upperRef;
+      } else {
+        // Query by order_id field
+        const qSnap = await db.collection('orders').where('order_id', '==', cleanId).get();
+        if (!qSnap.empty) {
+          docRef = qSnap.docs[0].ref;
+        } else {
+          const qUpperSnap = await db.collection('orders').where('order_id', '==', cleanId.toUpperCase()).get();
+          if (!qUpperSnap.empty) {
+            docRef = qUpperSnap.docs[0].ref;
+          }
+        }
       }
     }
+
     await docRef.set({
       payment_status: status,
       status: status,
@@ -423,57 +473,77 @@ app.post('/api/sheets/orders/status', async (req, res) => {
       status
     });
   } catch (err) {
+    console.error('[OrdersStatus] Error:', err);
     return res.status(500).json({ success: false, error: err.message });
   }
-});
+};
 
-// API: Append single row
-app.post('/api/sheets/append', async (req, res) => {
+app.post('/api/orders/status', handleUpdateOrderStatus);
+app.post('/api/sheets/orders/status', handleUpdateOrderStatus); // Backwards-compatibility alias
+
+// Handler: Append single document to a collection
+const handleAppendRow = async (req, res) => {
   try {
-    const { sheetName, rowData } = req.body;
-    if (!sheetName || !rowData) {
-      return res.status(400).json({ error: 'Missing sheetName or rowData' });
+    const { sheetName, collection, rowData, data } = req.body;
+    const targetName = collection || sheetName;
+    const payload = data || rowData;
+    if (!targetName || !payload) {
+      return res.status(400).json({ error: 'Missing collection name or payload' });
     }
-    const collectionName = getCollectionName(sheetName);
-    const docId = rowData.id || rowData['Invoice ID'] || rowData['Order ID'] || rowData['Customer ID'] || `doc_${Date.now()}`;
-    await db.collection(collectionName).document(String(docId)).set(rowData, { merge: true });
+    const collectionName = getCollectionName(targetName);
+    const docId = payload.id || payload['Invoice ID'] || payload['Order ID'] || payload['Customer ID'] || `doc_${Date.now()}`;
+    await db.collection(collectionName).doc(String(docId)).set(payload, { merge: true });
+
     return res.json({ success: true, id: docId });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
-});
+};
 
-// API: Batch append rows
-app.post('/api/sheets/batch-append', async (req, res) => {
+app.post('/api/db/append', handleAppendRow);
+app.post('/api/sheets/append', handleAppendRow); // Backwards-compatibility alias
+
+// Handler: Batch append documents
+const handleBatchAppend = async (req, res) => {
   try {
-    const { sheetName, rows } = req.body;
-    if (!sheetName || !Array.isArray(rows)) {
-      return res.status(400).json({ error: 'Missing sheetName or rows' });
+    const { sheetName, collection, rows, data } = req.body;
+    const targetName = collection || sheetName;
+    const records = data || rows;
+    if (!targetName || !Array.isArray(records)) {
+      return res.status(400).json({ error: 'Missing collection name or records array' });
     }
-    const collectionName = getCollectionName(sheetName);
+    const collectionName = getCollectionName(targetName);
     const batch = db.batch();
-    rows.forEach(r => {
-      const docRef = db.collection(collectionName).doc();
-      batch.set(docRef, r);
+    records.forEach(r => {
+      const docId = r.id || r['Invoice ID'] || r['Order ID'] || r['Customer ID'] || null;
+      const docRef = docId ? db.collection(collectionName).doc(String(docId)) : db.collection(collectionName).doc();
+      batch.set(docRef, r, { merge: true });
     });
     await batch.commit();
-    return res.json({ success: true, count: rows.length });
+    return res.json({ success: true, count: records.length });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
-});
+};
+
+app.post('/api/db/batch-append', handleBatchAppend);
+app.post('/api/sheets/batch-append', handleBatchAppend); // Backwards-compatibility alias
 
 // API: Read collection
-app.get('/api/sheets/read/:sheetName', async (req, res) => {
+const handleReadCollection = async (req, res) => {
   try {
-    const collectionName = getCollectionName(req.params.sheetName);
+    const targetName = req.params.collectionName || req.params.sheetName;
+    const collectionName = getCollectionName(targetName);
     const snap = await db.collection(collectionName).get();
     const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     return res.json({ headers: [], data });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
-});
+};
+
+app.get('/api/db/read/:collectionName', handleReadCollection);
+app.get('/api/sheets/read/:sheetName', handleReadCollection); // Backwards-compatibility alias
 
 // -----------------------------------------------------------------
 // MASTER DATA MANAGEMENT REST ENDPOINTS (Config, Holidays, Customers, Vendors, Templates)
@@ -495,7 +565,7 @@ app.post('/api/config', async (req, res) => {
   try {
     const { key, value } = req.body;
     if (!key) return res.status(400).json({ error: 'Missing key' });
-    await db.collection('config').document(key).set({
+    await db.collection('config').doc(key).set({
       key,
       value,
       last_updated: new Date().toISOString()
@@ -522,7 +592,7 @@ app.post('/api/holidays', async (req, res) => {
     const { date, event } = req.body;
     if (!date || !event) return res.status(400).json({ error: 'Missing date or event' });
     const docId = date.replace(/[^a-zA-Z0-9_-]/g, '_');
-    await db.collection('holidays').document(docId).set({ date, event });
+    await db.collection('holidays').doc(docId).set({ date, event });
     return res.json({ success: true, id: docId });
   } catch (e) {
     return res.status(500).json({ success: false, error: e.message });
@@ -531,7 +601,7 @@ app.post('/api/holidays', async (req, res) => {
 
 app.delete('/api/holidays/:id', async (req, res) => {
   try {
-    await db.collection('holidays').document(req.params.id).delete();
+    await db.collection('holidays').doc(req.params.id).delete();
     return res.json({ success: true });
   } catch (e) {
     return res.status(500).json({ success: false, error: e.message });
@@ -554,7 +624,7 @@ app.post('/api/customers', async (req, res) => {
     const { customer_id, name, phone, address } = req.body;
     if (!name) return res.status(400).json({ error: 'Missing name' });
     const cid = customer_id || `CUST-${Date.now()}`;
-    await db.collection('customers').document(cid).set({
+    await db.collection('customers').doc(cid).set({
       customer_id: cid,
       name,
       phone: phone || '',
@@ -583,7 +653,7 @@ app.post('/api/vendors', async (req, res) => {
     const { vendor_id, name, category, contact_person, phone, address } = req.body;
     if (!name) return res.status(400).json({ error: 'Missing name' });
     const vid = vendor_id || `VND-${Date.now()}`;
-    await db.collection('vendors').document(vid).set({
+    await db.collection('vendors').doc(vid).set({
       vendor_id: vid,
       name,
       category: category || '',
@@ -613,7 +683,7 @@ app.post('/api/templates', async (req, res) => {
     const { template_name, service_category, description, machine, labor_minutes, stitch_count } = req.body;
     if (!template_name) return res.status(400).json({ error: 'Missing template_name' });
     const docId = template_name.replace(/[^a-zA-Z0-9_-]/g, '_');
-    await db.collection('description_templates').document(docId).set({
+    await db.collection('description_templates').doc(docId).set({
       template_name,
       service_category: service_category || 'Machine Embroidery',
       description: description || '',

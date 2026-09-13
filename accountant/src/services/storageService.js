@@ -200,7 +200,11 @@ class StorageService {
     }
   }
 
-  hydrateFromSheets({ customers, vendors, sales, expenses, assets, capital, orders, descriptionTemplates }) {
+  hydrateFromSheets(data) {
+    return this.hydrateFromDatabase(data);
+  }
+
+  hydrateFromDatabase({ customers, vendors, sales, expenses, assets, capital, orders, descriptionTemplates }) {
     if (Array.isArray(customers) && customers.length > 0) {
       const mappedCust = customers.map(c => ({
         id: c['Customer ID'] || c.id || '',

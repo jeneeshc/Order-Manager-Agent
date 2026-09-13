@@ -20,7 +20,7 @@ import {
   RotateCcw
 } from 'lucide-react';
 import { storageService, parseCurrency, parseInteger } from '../../services/storageService';
-import { googleSheetsService } from '../../services/googleSheetsService';
+import { databaseService } from '../../services/databaseService';
 
 export default function OrdersManager({ onGenerateInvoice, onViewInvoice }) {
   const [orders, setOrders] = useState(() => storageService.getOrders());
@@ -33,7 +33,7 @@ export default function OrdersManager({ onGenerateInvoice, onViewInvoice }) {
 
   // Subscribe to storage changes & pull fresh orders on mount
   useEffect(() => {
-    googleSheetsService.fetchOrders().then(fresh => {
+    databaseService.fetchOrders().then(fresh => {
       if (fresh && fresh.length > 0) {
         setOrders(fresh);
       }
@@ -134,7 +134,7 @@ export default function OrdersManager({ onGenerateInvoice, onViewInvoice }) {
     try {
       storageService.updateOrderStatus(order.id, newStatus);
       setOrders(storageService.getOrders());
-      googleSheetsService.updateOrderStatus(order.id, newStatus).catch(() => {});
+      await databaseService.updateOrderStatus(order.id, newStatus);
     } catch (err) {
       console.warn('Status update error:', err);
     } finally {
