@@ -100,14 +100,14 @@ const DEFAULT_CONFIG = {
   gst_rate_percent: 18,
   studio_name: 'CJS Designs',
   tagline: 'Crafting fashion on fabric',
-  studio_address: '12/24, New Kerala Nagar, Peringala, Cochin, Kerala - 683565',
+  studio_address: 'New Kerala Nagar, Peringala, Cochin, Kerala - 683565',
   studio_phone: '+91 8289897413',
   studio_email: 'cjstechnologies.in@gmail.com',
   studio_gstin: '32DXRPS1247C1ZG',
   bank_name: 'HDFC Bank Ltd',
   account_number: '50200012345678',
   ifsc_code: 'HDFC0001234',
-  upi_id: 'cjsdesigns@hdfcbank'
+  upi_id: ''
 };
 
 // Default App Settings
@@ -147,8 +147,12 @@ class StorageService {
     } else {
       let needsUpdate = false;
       const updates = {};
-      if (storedConfig.studio_address?.includes('Fashion Craft Arcade')) {
-        updates.studio_address = DEFAULT_CONFIG.studio_address;
+      if (storedConfig.studio_address?.includes('Fashion Craft Arcade') || storedConfig.studio_address?.includes('12/24')) {
+        updates.studio_address = (storedConfig.studio_address || '').replace(/12\/24,?\s*/gi, '') || DEFAULT_CONFIG.studio_address;
+        needsUpdate = true;
+      }
+      if (storedConfig.upi_id === 'cjsdesigns@hdfcbank') {
+        updates.upi_id = '';
         needsUpdate = true;
       }
       if (storedConfig.studio_phone === '+91 98470 12345' || storedConfig.studio_phone?.includes('98470')) {

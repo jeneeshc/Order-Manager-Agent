@@ -517,35 +517,27 @@ export default function InvoiceDocument({ invoice, onBack, onMarkPaid }) {
           background: 'linear-gradient(90deg, #f59e0b 0%, #fbbf24 50%, #059669 100%)'
         }} />
 
-        {/* Brand Header */}
+        {/* Brand Header — Logo on left, Invoice pill on right */}
         <div style={{
-          padding: '16px 22px 14px',
+          padding: '18px 22px 14px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           background: '#ffffff',
           borderBottom: '1px solid #f1f5f9'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div>
             <img
               src="/siteLogo.png"
               alt="CJS Designs"
               crossOrigin="anonymous"
-              style={{ maxHeight: '42px', maxWidth: '140px', objectFit: 'contain' }}
+              style={{ maxHeight: '46px', maxWidth: '180px', objectFit: 'contain', display: 'block' }}
               onError={(e) => {
                 if (e.target.src !== window.location.origin + '/logo.svg') {
                   e.target.src = '/logo.svg';
                 }
               }}
             />
-            <div>
-              <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0f172a', letterSpacing: '-0.01em', lineHeight: 1.2 }}>
-                {config.studio_name || 'CJS Designs'}
-              </div>
-              <div style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: 600, marginTop: '2px', letterSpacing: '0.04em' }}>
-                {config.tagline || 'Crafting fashion on fabric'}
-              </div>
-            </div>
           </div>
 
           <div style={{ textAlign: 'right' }}>
@@ -652,101 +644,45 @@ export default function InvoiceDocument({ invoice, onBack, onMarkPaid }) {
               }}
             />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '0.66rem', color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 800, marginBottom: '2px' }}>
-                SERVICE & ARTWORK
-              </div>
-              <div style={{ fontWeight: 800, fontSize: '0.94rem', color: '#0f172a', marginBottom: '3px' }}>
+              <div style={{ fontWeight: 800, fontSize: '0.98rem', color: '#0f172a', marginBottom: '3px' }}>
                 {invoice.serviceType}
               </div>
-              <div style={{ fontSize: '0.76rem', color: '#57534e', lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+              <div style={{ fontSize: '0.78rem', color: '#57534e', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                 {(invoice.description || '').replace(/\s*\(AI Order:.*?\)/, '').trim() || 'Custom embroidery craft & precision thread work'}
               </div>
-              <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
-                {invoice.totalStitches > 0 && (
+              {invoice.totalStitches > 0 && (
+                <div style={{ marginTop: '6px' }}>
                   <span style={{ fontSize: '0.68rem', fontWeight: 700, background: '#ecfdf5', color: '#047857', padding: '1px 7px', borderRadius: '4px', border: '1px solid #a7f3d0' }}>
                     {invoice.totalStitches.toLocaleString()} Stitches
                   </span>
-                )}
-                {hasCustomImage ? (
-                  <span style={{ fontSize: '0.68rem', fontWeight: 700, background: '#fef3c7', color: '#b45309', padding: '1px 7px', borderRadius: '4px', border: '1px solid #fde68a' }}>
-                    ✓ Custom Artwork Attached
-                  </span>
-                ) : (
-                  <span style={{ fontSize: '0.68rem', fontWeight: 600, background: '#f1f5f9', color: '#64748b', padding: '1px 7px', borderRadius: '4px' }}>
-                    Standard Reference
-                  </span>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Amount Breakdown */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '14px' }}>
-            {parseCurrency(invoice.netPrice) > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#64748b' }}>
-                <span>Embroidery Work</span>
-                <span style={{ fontWeight: 600, color: '#334155' }}>₹{parseCurrency(invoice.netPrice).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-              </div>
-            )}
-            {parseCurrency(invoice.courier) > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#64748b' }}>
-                <span>Courier / Logistics</span>
-                <span style={{ fontWeight: 600, color: '#334155' }}>₹{parseCurrency(invoice.courier).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-              </div>
-            )}
-            {parseCurrency(invoice.gst) > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#64748b' }}>
-                <span>GST ({config.gst_rate_percent || 18}%)</span>
-                <span style={{ fontWeight: 600, color: '#334155' }}>₹{parseCurrency(invoice.gst).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Grand Total Highlight Banner (Theme Matching Gold) */}
+          {/* Total Amount Highlight Banner */}
           <div style={{
             background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
             border: '1.5px solid #fcd34d',
             borderRadius: '12px',
-            padding: '12px 18px',
+            padding: '14px 18px',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            marginBottom: '14px',
             boxShadow: '0 4px 14px rgba(217,119,6,0.1)'
           }}>
             <div>
-              <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#92400e', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                Grand Total Amount
+              <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#92400e', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                Total Amount
               </div>
               <div style={{ fontSize: '0.72rem', color: isPaid ? '#047857' : '#b45309', fontWeight: 700, marginTop: '2px' }}>
                 {isPaid ? 'Payment Cleared' : 'Pending Payment'}
               </div>
             </div>
-            <div style={{ fontWeight: 900, fontSize: '1.55rem', color: '#78350f', letterSpacing: '-0.02em' }}>
+            <div style={{ fontWeight: 900, fontSize: '1.65rem', color: '#78350f', letterSpacing: '-0.02em' }}>
               ₹{parseCurrency(invoice.grossTotal).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
-
-          {/* UPI Payment Info Pill (For Pending Invoices) */}
-          {!isPaid && (
-            <div style={{
-              background: '#f0fdf4',
-              border: '1px dashed #86efac',
-              borderRadius: '8px',
-              padding: '8px 12px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: '10px'
-            }}>
-              <span style={{ fontSize: '0.72rem', color: '#166534', fontWeight: 700 }}>
-                Pay via UPI:
-              </span>
-              <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#15803d', fontFamily: 'monospace' }}>
-                {config.upi_id || 'cjsdesigns@hdfcbank'}
-              </span>
-            </div>
-          )}
         </div>
 
         {/* Card Footer */}
@@ -761,7 +697,7 @@ export default function InvoiceDocument({ invoice, onBack, onMarkPaid }) {
         }}>
           <span>📞 {config.studio_phone || '+91 8289897413'}</span>
           <span style={{ margin: '0 8px', color: '#cbd5e1' }}>•</span>
-          <span>{config.studio_address ? config.studio_address.split(',')[0] : 'Malabar, Kerala'}</span>
+          <span>New Kerala Nagar, Cochin, Kerala</span>
           <div style={{ fontSize: '0.68rem', color: '#b45309', fontWeight: 600, marginTop: '3px' }}>
             ✨ Thank you for choosing CJS Designs
           </div>

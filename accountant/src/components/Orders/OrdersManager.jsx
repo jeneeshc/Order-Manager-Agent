@@ -468,11 +468,6 @@ export default function OrdersManager({ onGenerateInvoice }) {
                                   }}
                                 />
                               </a>
-                              {!hasRealImage && (
-                                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                                  Default Art
-                                </span>
-                              )}
                             </div>
                           );
                         })()}
