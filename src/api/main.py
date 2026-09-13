@@ -366,6 +366,8 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
 
                     # 8. Handle optional PhotoPicker upload from camera / WhatsApp gallery
                     raw_photos = interactive_payload.get("photo_picker") or []
+                    if isinstance(raw_photos, dict):
+                        raw_photos = [raw_photos]
                     if isinstance(raw_photos, list) and len(raw_photos) > 0:
                         photo_info = raw_photos[0]
                         media_id = photo_info.get("id")
@@ -548,54 +550,104 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
 @app.post("/webhook")
 async def handle_webhook(request: Request, background_tasks: BackgroundTasks = None):
     """WhatsApp Webhook message handler (POST)."""
-    data = await request.json()
-    
-    # Process WhatsApp message structure
-    if "entry" in data:
-        for entry in data["entry"]:
-            for change in entry.get("changes", []):
-                value = change.get("value", {})
-                if "messages" in value:
-                    for message in value["messages"]:
-                        sender_phone = message.get("from")
-                        msg_type = message.get("type")
-                        
-                        interactive_payload = None
-                        text_body = ""
+    try:
+        data = await request.json()
+    except Exception as e:
+        print(f"[WEBHOOK ERROR] Failed to parse request JSON: {e}")
+        return {"status": "error"}
 
-                        if msg_type == "text":
-                            text_body = message.get("text", {}).get("body", "")
-                        elif msg_type == "interactive":
-                            interactive = message.get("interactive", {})
-                            if interactive.get("type") == "nfm_reply":
-                                response_json = interactive.get("nfm_reply", {}).get("response_json", "{}")
-                                import json
-                                try:
-                                    interactive_payload = json.loads(response_json)
-                                    text_body = "[FORM_SUBMITTED]"
-                                except json.JSONDecodeError:
-                                    pass
-                        elif msg_type == "image":
-                            img_obj = message.get("image", {})
-                            caption = img_obj.get("caption", "")
-                            text_body = caption or "[IMAGE_RECEIVED]"
-                            interactive_payload = {
-                                "photo_picker": [{
-                                    "id": img_obj.get("id"),
-                                    "mime_type": img_obj.get("mime_type", "image/jpeg"),
-                                    "file_name": f"{img_obj.get('id')}.jpg"
-                                }]
-                            }
-                        
-                        if not text_body:
-                            continue
+    try:
+        # Process WhatsApp message structure
+        if "entry" in data:
+            for entry in data["entry"]:
+                for change in entry.get("changes", []):
+                    value = change.get("value", {})
 
-                        print(f"[RECV] Message from {sender_phone}: {text_body}")
-                        
-                        # Process WhatsApp message synchronously to keep Cloud Run CPU at 100%
-                        # Deterministic pipeline completes in ~2-3 seconds, well within Meta's 20s SLA
-                        process_webhook_message(sender_phone, text_body, interactive_payload)
-    
+                    # Log any delivery errors or status changes
+                    if "statuses" in value:
+                        for status in value["statuses"]:
+                            s_status = status.get("status")
+                            s_id = status.get("id")
+                            s_errors = status.get("errors")
+                            if s_errors or s_status in ("failed", "undelivered"):
+                                print(f"[WHATSAPP STATUS ERROR] id={s_id}, status={s_status}, errors={s_errors}")
+
+                    if "errors" in value:
+                        print(f"[WHATSAPP VALUE ERROR] errors={value['errors']}")
+
+                    if "messages" in value:
+                        for message in value["messages"]:
+                            sender_phone = message.get("from")
+                            msg_type = message.get("type")
+                            
+                            interactive_payload = None
+                            text_body = ""
+
+                            if msg_type == "text":
+                                text_body = message.get("text", {}).get("body", "")
+                            elif msg_type == "interactive":
+                                interactive = message.get("interactive", {})
+                                itype = interactive.get("type")
+                                if itype == "nfm_reply":
+                                    nfm = interactive.get("nfm_reply", {})
+                                    response_json = nfm.get("response_json", "{}")
+                                    import json
+                                    if isinstance(response_json, dict):
+                                        interactive_payload = response_json
+                                        text_body = "[FORM_SUBMITTED]"
+                                    elif isinstance(response_json, str):
+                                        try:
+                                            interactive_payload = json.loads(response_json)
+                                            text_body = "[FORM_SUBMITTED]"
+                                        except Exception as parse_err:
+                                            print(f"[WEBHOOK ERROR] Failed to parse nfm_reply response_json: {parse_err}, raw: {response_json}")
+                                elif itype == "button_reply":
+                                    btn = interactive.get("button_reply", {})
+                                    text_body = btn.get("id") or btn.get("title") or ""
+                                elif itype == "list_reply":
+                                    lst = interactive.get("list_reply", {})
+                                    text_body = lst.get("id") or lst.get("title") or ""
+                                else:
+                                    print(f"[WEBHOOK UNHANDLED INTERACTIVE] type={itype}, data={interactive}")
+                            elif msg_type == "button":
+                                btn = message.get("button", {})
+                                text_body = btn.get("payload") or btn.get("text") or ""
+                            elif msg_type == "image":
+                                img_obj = message.get("image", {})
+                                caption = img_obj.get("caption", "")
+                                text_body = caption or "[IMAGE_RECEIVED]"
+                                interactive_payload = {
+                                    "photo_picker": [{
+                                        "id": img_obj.get("id"),
+                                        "mime_type": img_obj.get("mime_type", "image/jpeg"),
+                                        "file_name": f"{img_obj.get('id')}.jpg"
+                                    }]
+                                }
+                            elif msg_type == "document":
+                                doc_obj = message.get("document", {})
+                                caption = doc_obj.get("caption", "")
+                                text_body = caption or "[DOCUMENT_RECEIVED]"
+                                interactive_payload = {
+                                    "photo_picker": [{
+                                        "id": doc_obj.get("id"),
+                                        "mime_type": doc_obj.get("mime_type", "image/jpeg"),
+                                        "file_name": doc_obj.get("filename", f"{doc_obj.get('id')}.jpg")
+                                    }]
+                                }
+                            
+                            if not text_body:
+                                print(f"[WEBHOOK SKIP] Unhandled message format: {message}")
+                                continue
+
+                            print(f"[RECV] Message from {sender_phone}: {text_body}")
+                            
+                            # Process WhatsApp message synchronously to keep Cloud Run CPU at 100%
+                            # Deterministic pipeline completes in ~2-3 seconds, well within Meta's 20s SLA
+                            process_webhook_message(sender_phone, text_body, interactive_payload)
+    except Exception as e:
+        print(f"[WEBHOOK CRITICAL ERROR] {e}")
+        traceback.print_exc()
+
     return {"status": "received"}
 
 if __name__ == "__main__":

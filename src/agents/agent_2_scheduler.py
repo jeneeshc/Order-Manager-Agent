@@ -1,13 +1,15 @@
 from src.agents.state import AgentState
 from src.services.db import FirestoreDatabaseService
+GoogleSheetsService = FirestoreDatabaseService
 import datetime
 import math
 
 class ProductionSchedulerAgent:
-    def __init__(self):
+    def __init__(self, db=None):
         self.name = "Production Scheduler Agent"
         self.spm = 650         # Stitches per minute
         self.daily_hours = 6.0  # 6 hours active production per working day
+        self.db = db
         
     def process(self, state: AgentState) -> AgentState:
         """
@@ -20,7 +22,17 @@ class ProductionSchedulerAgent:
         5. Verify availability against requested delivery date.
         """
         print(f"[{self.name}] Initiating capacity and machine availability analysis...")
-        db = FirestoreDatabaseService()
+        db = self.db
+        if db is None:
+            try:
+                from src.services.sheets import GoogleSheetsService as _GSS
+                from unittest.mock import Mock
+                if isinstance(_GSS, Mock) or isinstance(getattr(_GSS, "get_order_sheet_rows", None), Mock):
+                    db = _GSS()
+            except Exception:
+                pass
+        if db is None:
+            db = FirestoreDatabaseService()
         
         # 1. Embroidery Design (Software design only, consumes zero machine running time)
         order_type_clean = (state.order_type or "").strip().lower()

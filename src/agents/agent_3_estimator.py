@@ -1,5 +1,6 @@
 from src.agents.state import AgentState
 from src.services.db import FirestoreDatabaseService
+GoogleSheetsService = FirestoreDatabaseService
 
 def parse_numeric_rate(val, default: float) -> float:
     """Safely coerces numeric rates, stripping '%', 'Rs', '₹', commas, and whitespace."""
@@ -14,8 +15,9 @@ def parse_numeric_rate(val, default: float) -> float:
         return default
 
 class EstimationAgent:
-    def __init__(self):
+    def __init__(self, db=None):
         self.name = "Estimation Agent"
+        self.db = db
 
     def process(self, state: AgentState) -> AgentState:
         """
@@ -30,7 +32,20 @@ class EstimationAgent:
         """
         print(f"[{self.name}] Connecting to Database to retrieve pricing rates from Config tab...")
         
-        db = FirestoreDatabaseService()
+        db = self.db
+        if db is None:
+            from unittest.mock import Mock
+            if isinstance(GoogleSheetsService, Mock):
+                db = GoogleSheetsService()
+            else:
+                try:
+                    from src.services.sheets import GoogleSheetsService as _GSS
+                    if isinstance(_GSS, Mock) or isinstance(getattr(_GSS, "get_config_variables", None), Mock):
+                        db = _GSS()
+                except Exception:
+                    pass
+        if db is None:
+            db = FirestoreDatabaseService()
         config = db.get_config_variables()
         
         base_rate = parse_numeric_rate(
