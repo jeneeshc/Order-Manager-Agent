@@ -3,7 +3,7 @@ Legacy alias for CJSSingleAgent.
 Maintains backward compatibility for tests and existing imports.
 """
 from langchain_google_genai import ChatGoogleGenerativeAI
-from src.services.sheets import GoogleSheetsService
+from src.services.db import FirestoreDatabaseService as GoogleSheetsService
 from src.agents.single_agent import (
     CJSSingleAgent as OrderCollectorAgent,
     sanitize_customer_name,

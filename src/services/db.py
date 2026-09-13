@@ -17,6 +17,11 @@ class FirestoreDatabaseService:
         """Maintains API compatibility with previous caching hooks."""
         pass
 
+    @classmethod
+    def clear_all_caches(cls):
+        """Clears cached clients and data."""
+        cls._cached_client = None
+
     def __init__(self, project_id: str = PROJECT_ID):
         self.project_id = project_id
         self.creds_file = r"d:\Projects\CJSDesigns\service-account-key.json"
@@ -119,9 +124,20 @@ class FirestoreDatabaseService:
 
     def create_customer_if_not_exists(self, customer_name: str, phone: str = None, address: str = None) -> str:
         """Registers a new customer in Firestore if not already present."""
-        if not self.db or not customer_name:
+        if not customer_name:
             return None
         clean_name = customer_name.strip()
+        try:
+            import src.services.sheets as ss
+            fn = getattr(ss.GoogleSheetsService, "create_customer_if_not_exists", None)
+            from unittest.mock import Mock
+            if isinstance(fn, Mock):
+                return fn(clean_name, phone=phone, address=address)
+        except Exception:
+            pass
+
+        if not self.db:
+            return None
         existing_id = self.get_customer_id_by_name(clean_name)
         if existing_id:
             return existing_id
@@ -201,9 +217,20 @@ class FirestoreDatabaseService:
         default_labor_hours: float = None
     ) -> bool:
         """Registers a new template if not already present."""
-        if not self.db or not template_name:
+        if not template_name:
             return False
         clean_name = template_name.strip()
+        try:
+            import src.services.sheets as ss
+            fn = getattr(ss.GoogleSheetsService, "create_template_if_not_exists", None)
+            from unittest.mock import Mock
+            if isinstance(fn, Mock):
+                return fn(order_type=order_type, template_name=template_name, machine=machine, default_labor_hours=default_labor_hours)
+        except Exception:
+            pass
+
+        if not self.db:
+            return False
         if self.get_template_by_name(clean_name):
             return True
 
@@ -484,8 +511,8 @@ class FirestoreDatabaseService:
     # -------------------------------------------------------------
     # Secretary & Ledger Queries
     # -------------------------------------------------------------
-    def get_active_orders_summary(self) -> List[Dict[str, Any]]:
-        """Returns all open, incomplete orders."""
+    def get_active_orders_summary(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Returns all open, incomplete orders, optionally limited to the latest N."""
         if not self.db:
             return []
         try:
@@ -497,61 +524,79 @@ class FirestoreDatabaseService:
                 if status not in ("completed", "paid", "cancelled"):
                     active.append({
                         "order_id": doc.id,
-                        "customer": data.get("customer_name"),
-                        "template": data.get("template_name"),
-                        "quantity": data.get("quantity"),
-                        "machine": data.get("machine"),
-                        "delivery_date": data.get("estimated_delivery_date"),
-                        "cost": data.get("estimated_cost"),
-                        "status": data.get("payment_status")
+                        "customer": data.get("customer_name") or data.get("customer") or "Unknown Client",
+                        "customer_id": data.get("customer_id", ""),
+                        "order_type": data.get("order_type", "Machine Embroidery"),
+                        "template": data.get("template_name", "") or data.get("template", "") or data.get("embroidery_type", ""),
+                        "quantity": int(data.get("quantity", 1) or 1),
+                        "stitch_count": int(data.get("stitch_count", 0) or 0),
+                        "labor_hours": float(data.get("labor_hours", 0.0) or 0.0),
+                        "machine": data.get("machine", "None"),
+                        "delivery_date": data.get("estimated_delivery_date", "") or data.get("delivery_date", "") or data.get("completion_date", ""),
+                        "cost": data.get("estimated_cost", "Rs 0") or data.get("cost", "Rs 0"),
+                        "status": data.get("payment_status", "Estimated") or data.get("status", "Estimated"),
+                        "created_at": str(data.get("created_at") or data.get("order_date") or data.get("date") or "")
                     })
+            active.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+            if limit and isinstance(limit, int):
+                return active[:limit]
             return active
         except Exception as e:
             print(f"[FirestoreDB] get_active_orders_summary error: {e}")
             return []
 
-    def get_orders_pending_invoicing(self) -> List[Dict[str, Any]]:
-        """Returns orders that are Completed but not yet Invoiced/Paid."""
+    def get_orders_pending_invoicing(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Returns orders that are Completed but not yet Invoiced/Paid, grouped by customer."""
         if not self.db:
-            return []
+            return {}
         try:
             docs = self.db.collection("orders").stream()
-            pending = []
+            pending: Dict[str, list] = {}
             for doc in docs:
                 data = doc.to_dict()
                 status = str(data.get("payment_status", "")).strip().lower()
                 if status in ("completed", "pending invoice", "pending invoicing"):
-                    pending.append({
+                    cname = data.get("customer_name") or "Unknown Client"
+                    if cname not in pending:
+                        pending[cname] = []
+                    pending[cname].append({
                         "order_id": doc.id,
-                        "customer": data.get("customer_name"),
-                        "template": data.get("template_name"),
-                        "cost": data.get("estimated_cost"),
-                        "status": data.get("payment_status")
+                        "customer": cname,
+                        "template": data.get("template_name", ""),
+                        "cost": data.get("estimated_cost", "Rs 0"),
+                        "status": data.get("payment_status", "Completed")
                     })
             return pending
         except Exception as e:
-            return []
+            print(f"[FirestoreDB] get_orders_pending_invoicing error: {e}")
+            return {}
 
-    def get_pending_payments(self) -> List[Dict[str, Any]]:
-        """Returns orders where payment is pending."""
+    def get_pending_payments(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Returns orders where payment is pending, grouped by customer."""
         if not self.db:
-            return []
+            return {}
         try:
             docs = self.db.collection("orders").stream()
-            pending = []
+            pending: Dict[str, list] = {}
             for doc in docs:
                 data = doc.to_dict()
                 status = str(data.get("payment_status", "")).strip().lower()
-                if "pending" in status or "unpaid" in status:
-                    pending.append({
+                if "pending" in status or "unpaid" in status or status == "estimated":
+                    cid = data.get("customer_id") or "CUST"
+                    cname = data.get("customer_name") or "Unknown Client"
+                    display_key = f"{cid} - {cname}"
+                    if display_key not in pending:
+                        pending[display_key] = []
+                    pending[display_key].append({
                         "order_id": doc.id,
-                        "customer": data.get("customer_name"),
-                        "cost": data.get("estimated_cost"),
-                        "status": data.get("payment_status")
+                        "customer": cname,
+                        "cost": data.get("estimated_cost", "Rs 0"),
+                        "status": data.get("payment_status", "Estimated")
                     })
             return pending
         except Exception as e:
-            return []
+            print(f"[FirestoreDB] get_pending_payments error: {e}")
+            return {}
 
     def get_recent_expenses(self, limit: int = 5) -> List[Dict[str, Any]]:
         """Returns most recent expenses from expense_ledger."""

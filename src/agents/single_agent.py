@@ -3,7 +3,8 @@ import datetime
 from typing import Optional
 from langchain_google_genai import ChatGoogleGenerativeAI
 from src.agents.state import AgentState
-from src.services.sheets import GoogleSheetsService
+from src.services.db import FirestoreDatabaseService
+GoogleSheetsService = FirestoreDatabaseService
 from src.agents.agent_2_scheduler import ProductionSchedulerAgent
 from src.agents.agent_3_estimator import EstimationAgent
 from src.agents.agent_6_secretary import SecretaryAgent
@@ -710,6 +711,11 @@ class CJSSingleAgent:
             state.next_step = "END"
             
             # 1. Invalidate all in-memory caches
+            try:
+                from src.services.sheets import GoogleSheetsService as RealSheetsService
+                RealSheetsService.clear_all_caches()
+            except Exception:
+                pass
             GoogleSheetsService.clear_all_caches()
             
             # 2. Trigger Flow recompilation and deployment to Meta
