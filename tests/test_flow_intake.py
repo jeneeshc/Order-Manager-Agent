@@ -193,7 +193,8 @@ def test_customer_forwardable_response_omits_internal_costing():
         assert "* Quantity: 2 pcs" in text_msg
         assert "* Est. Delivery Date:" in text_msg
         assert "* Total Amount:" in text_msg
-        assert "* Design Image: https://storage.googleapis.com/cjs-designs-501004-media/order_images/2026_09/CJS-MOCK01.jpg" in text_msg
+        assert "* Design Image:" not in text_msg
+        assert "https://storage.googleapis.com" not in text_msg
 
         # Verify STRICT omission of internal details:
         assert "* Assigned Machine:" not in text_msg

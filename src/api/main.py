@@ -214,10 +214,15 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                                             f"* Template: {order_data.get('template')}\n"
                                             f"* Quantity: {order_data.get('quantity')} pcs\n"
                                             f"* Est. Delivery Date: {order_data.get('delivery_date')}\n"
-                                            f"* Total Amount: {order_data.get('cost')}\n"
-                                            f"* Design Image: {img_url}"
+                                            f"* Total Amount: {order_data.get('cost')}"
                                         )
                                         whatsapp_service.send_text_message(sender_phone, confirm_reply)
+                                        if img_url and (str(img_url).startswith("http://") or str(img_url).startswith("https://")):
+                                            whatsapp_service.send_image_message(
+                                                sender_phone,
+                                                img_url,
+                                                caption=f"Design Image for Order {target_order_id}"
+                                            )
                                         memory_service.clear_state(sender_phone)
                                         return
                             else:
@@ -425,11 +430,6 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                         f"* Est. Delivery Date: {delivery_date}\n"
                         f"* Total Amount: {total_cost_str}"
                     )
-                    if initial_state.image_url:
-                        confirm_reply += f"\n* Design Image: {initial_state.image_url}"
-                    else:
-                        confirm_reply += "\n\n📸 *Tip:* To attach a design photo, simply send the image directly in this chat!"
-
                     print(f"[FAST-PATH] Sending customer-forwardable confirmation to {sender_phone} for {order_id}")
                     # 1. ALWAYS send the text confirmation first so the user reliably gets the estimate instantly
                     whatsapp_service.send_text_message(sender_phone, confirm_reply)
@@ -440,6 +440,11 @@ def process_webhook_message(sender_phone: str, text_body: str, interactive_paylo
                             sender_phone,
                             initial_state.image_url,
                             caption=f"Design Image for Order {order_id}"
+                        )
+                    else:
+                        whatsapp_service.send_text_message(
+                            sender_phone,
+                            "📸 *Tip:* To attach a design photo, simply send the image directly in this chat!"
                         )
 
                     # Track recent order ID for seamless standalone photo attachment
